@@ -146,9 +146,9 @@
     },
     "img-assist": {
       "installed_at": "2026-04-26",
-      "last_invoked": null,
-      "invoke_count": 0,
-      "first_invoked": null
+      "last_invoked": "2026-04-27T15:33:24.041339+00:00",
+      "invoke_count": 1,
+      "first_invoked": "2026-04-27T15:33:24.041339+00:00"
     },
     "mineru-ocr": {
       "installed_at": "2026-04-16",
@@ -347,6 +347,18 @@
       "last_invoked": null,
       "invoke_count": 0,
       "first_invoked": null
+    },
+    "test": {
+      "installed_at": null,
+      "last_invoked": "2026-04-27T15:20:04.726286Z",
+      "invoke_count": 1,
+      "first_invoked": "2026-04-27T15:20:04.726286Z"
+    },
+    "tkk-case": {
+      "installed_at": null,
+      "last_invoked": "2026-04-27T15:25:06.212278+00:00",
+      "invoke_count": 2,
+      "first_invoked": "2026-04-27T15:24:22.180083Z"
     }
   }
 }

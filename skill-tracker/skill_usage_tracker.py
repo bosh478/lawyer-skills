@@ -13,7 +13,7 @@ Skill Usage Tracker
 import json
 import os
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime
 
 TRACKER_DIR = os.path.expanduser("~/.claude/skills/skill-tracker")
 USAGE_FILE = os.path.join(TRACKER_DIR, "skills_usage.json")
