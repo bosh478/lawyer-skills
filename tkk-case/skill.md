@@ -1183,36 +1183,33 @@ Step 6: 插入 Markdown 引用
 | `timeline` | 时间线 | 案件时间节点、行为发展过程、资金流向 |
 | `infographic` | 信息图 | 金额数据、涉案比例、量刑档次 |
 
-#### 案件类型配色方案
+#### 统一配色方案（极简风格）
 
-| 案件类型 | 背景色 | 强调色 | 视觉风格 |
-|---------|--------|--------|---------|
-| 单一刑事 | 深蓝色 #1a237e | 白色/金色 | 庄重严肃 |
-| 单一民商 | 深绿色 #1b5e20 | 白色/银色 | 专业商业 |
-| 单一行政 | 深红色 #b71c1c | 白色/金色 | 权威警示 |
-| 刑民交叉 | 深紫色 #4a148c | 白色/金色 | 融合复杂 |
+| 配色 | 值 | 说明 |
+|-----|---|------|
+| 背景色 | 白色 #FFFFFF 或浅灰 #F5F5F5 | 简洁明亮 |
+| 主色调 | 深灰 #333333 | 文字和主要元素 |
+| 辅助色 | 中灰 #666666 | 次要元素 |
+| 强调色 | 蓝色 #2196F3 | 重点标注 |
+
+**极简风格特点**：
+- 大面积留白
+- 少量色块
+- 简洁线条
+- 清晰层次
 
 #### prompt 生成模板
 
 ```
 prompt 结构：
-"Professional legal infographic, [背景色], Chinese text '[核心论点一句话]', [视觉元素], [风格]"
+"Minimalist legal infographic, white background, Chinese text '[核心论点一句话]', [视觉元素], clean and professional style"
 
 示例：
-- 刑事案件：
-  "Professional legal infographic, dark blue background #1a237e, 
-   Chinese text '两阶层犯罪论体系：客观违法→主观有责', 
-   key visual elements, solemn legal style"
+"Minimalist legal infographic, white background, Chinese text '两阶层犯罪论体系：客观违法→主观有责', key visual elements, clean professional style"
 
-- 民商案件：
-  "Professional legal infographic, dark green background #1b5e20, 
-   Chinese text '请求权检索顺序：契约→物权→侵权→不当得利', 
-   key visual elements, professional commercial style"
+"Minimalist legal infographic, light gray background, Chinese text '请求权检索顺序：契约→物权→侵权→不当得利', key visual elements, clean professional style"
 
-- 行政案件：
-  "Professional legal infographic, dark red background #b71c1c, 
-   Chinese text '行政行为合法性三步审查：结果→依据→证据', 
-   key visual elements, authoritative legal style"
+"Minimalist legal infographic, white background, Chinese text '行政行为合法性三步审查：结果→依据→证据', key visual elements, clean professional style"
 ```
 
 #### 调用 baoyu-imagine
