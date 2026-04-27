@@ -1,0 +1,69 @@
+{
+  "expectations": [
+    {
+      "text": "文件数量: 生成了1个摘要文件（源文件1个）",
+      "passed": true,
+      "evidence": "eval_metadata.json indicates 1 source file. outputs/ contains exactly 1 file: summary_法答网精选答问第一批.md"
+    },
+    {
+      "text": "frontmatter完整性: type、source、created/updated 字段存在",
+      "passed": true,
+      "evidence": "Frontmatter contains: type: summary, source: [[01法答网精选答问第一批.md]], created: 2026-04-16, updated: 2026-04-16, category: 诉讼与仲裁, tags: [劳动争议, 婚姻家庭, 公司股权, 刑事犯罪, 行政诉讼, 生态环境, 工伤认定]"
+    },
+    {
+      "text": "无占位符内容: 不含\"TODO\"、\"待补充\"、\"（略）\"等",
+      "passed": true,
+      "evidence": "File contains substantive content: 10 legal Q&As with detailed analysis, expert commentary, and legal provisions. No placeholder text found."
+    },
+    {
+      "text": "内容提取质量: 从原文提取了实际要点，不是空壳",
+      "passed": true,
+      "evidence": "Summary extracts 10 legal questions with key points: (1) Labor relationship determination for online streamers - three attributes of subordination; (2) Child custody principles; (3) Securities margin trading guarantee rights; (4) Share contribution valuation; (5) Criminal proceeds in bankruptcy; (6) Stock execution qualifications; (7) Bribery and abuse of power; (8) Environmental damage compensation review; (9) Administrative preservation; (10) Work injury during team building. Each includes expert commentary and legal basis."
+    },
+    {
+      "text": "文件保存在正确目录: wiki/summaries/",
+      "passed": false,
+      "evidence": "File saved to C:\\Users\\汤康康\\.claude\\skills\\legal-ingest\\legal-ingest-workspace\\iteration-1\\eval-1-with_skill\\outputs\\summary_法答网精选答问第一批.md instead of wiki/summaries/ directory. The skill prompt specified '生成 wiki/summaries/ 下的摘要文件', but the file was written to the eval outputs directory, not to the target wiki/summaries/ directory."
+    }
+  ],
+  "summary": {
+    "passed": 4,
+    "failed": 1,
+    "total": 5,
+    "pass_rate": 0.8
+  },
+  "execution_metrics": {
+    "total_duration_seconds": 83.8
+  },
+  "claims": [
+    {
+      "claim": "Summary file contains frontmatter with type: summary and category field",
+      "type": "factual",
+      "verified": true,
+      "evidence": "Frontmatter shows type: summary and category: 诉讼与仲裁"
+    },
+    {
+      "claim": "Output file is saved in the correct wiki/summaries/ directory",
+      "type": "quality",
+      "verified": false,
+      "evidence": "File is in eval outputs directory, not wiki/summaries/"
+    }
+  ],
+  "user_notes_summary": {
+    "uncertainties": [],
+    "needs_review": [],
+    "workarounds": []
+  },
+  "eval_feedback": {
+    "suggestions": [
+      {
+        "assertion": "文件保存在正确目录: wiki/summaries/",
+        "reason": "This assertion correctly caught a meaningful failure - the file was written to the eval outputs directory rather than the target wiki directory specified in the skill prompt. This is the kind of discriminating assertion that catches real problems."
+      },
+      {
+        "reason": "The eval could be improved by also checking whether the frontmatter source field correctly points to the original source file. The output correctly shows source: [[01法答网精选答问第一批.md]] which matches the original file."
+      }
+    ],
+    "overall": "Four of five assertions passed - content quality is high with substantive extraction of legal information. The directory assertion correctly identified that the file was saved to the wrong location (eval outputs instead of wiki/summaries/)."
+  }
+}

@@ -1,0 +1,53 @@
+{
+  "expectations": [
+    {
+      "text": "文件数量: 生成了10个摘要文件（每个问答1个）",
+      "passed": true,
+      "evidence": "Found 10 files in outputs directory: summary_01 through summary_10, each corresponding to one Q&A from the source document"
+    },
+    {
+      "text": "frontmatter完整性: type、source、created/updated 字段存在",
+      "passed": true,
+      "evidence": "All 10 files contain required frontmatter fields: type: summary, source: [[01法答网精选答问第一批]], created: 2026-04-16, updated: 2026-04-16"
+    },
+    {
+      "text": "无占位符内容: 不含\"TODO\"、\"待补充\"、\"（略）\"等",
+      "passed": true,
+      "evidence": "grep found 0 occurrences of placeholder text (TODO, 待补充, （略）) across all output files"
+    },
+    {
+      "text": "内容提取质量: 从原文提取了实际要点，不是空壳",
+      "passed": true,
+      "evidence": "Content includes structured tables (e.g., 从属性类型表格, 年龄段抚养权规则表格), legal citations (e.g., 《劳动合同法》第7条, 《民法典》第1084条), expert comments with names and titles, and actual analysis. Files average 37-59 lines each with substantive content."
+    },
+    {
+      "text": "category字段: 正确分类（劳动与社会保障、婚姻家庭与继承等）",
+      "passed": true,
+      "evidence": "All categories are valid: 劳动与社会保障 (x2), 婚姻家庭与继承, 金融与财税, 公司商事与合规, 诉讼与仲裁 (x2), 刑事参考, 生态环境与能源, 政府与公共法律服务"
+    }
+  ],
+  "summary": {
+    "passed": 5,
+    "failed": 0,
+    "total": 5,
+    "pass_rate": 1.0
+  },
+  "execution_metrics": {
+    "output_chars": 22840,
+    "total_files": 10
+  },
+  "timing": {
+    "executor_duration_seconds": 68.2,
+    "total_duration_seconds": 68.2
+  },
+  "claims": [],
+  "user_notes_summary": {
+    "uncertainties": [],
+    "needs_review": [],
+    "workarounds": []
+  },
+  "eval_feedback": {
+    "suggestions": [],
+    "overall": "No suggestions, evals look solid"
+  }
+}

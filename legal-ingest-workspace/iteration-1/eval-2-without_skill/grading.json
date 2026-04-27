@@ -1,0 +1,57 @@
+{
+  "expectations": [
+    {
+      "text": "文件数量: 生成了30个摘要文件（每个问答1个）",
+      "passed": true,
+      "evidence": "Listed all 30 output files: batch1 (10 files q01-q10), batch2 (5 files q01-q05), batch3 (5 files q01-q05), batch4 (5 files q01-q05), batch5 (5 files q01-q05). Total: 30 files."
+    },
+    {
+      "text": "frontmatter完整性: type、source、created/updated 字段存在",
+      "passed": true,
+      "evidence": "Grep across all 30 files found 180 matches for frontmatter fields (6 fields x 30 files = 180). Every file contains title, type, category, source, created, and updated fields. Sampled files confirmed: fadatwang_summary_batch1_q01劳动关系.md, batch1_q07, batch2_q01, batch3_q03, batch4_q01, batch5_q01, batch5_q05 all had complete frontmatter."
+    },
+    {
+      "text": "无占位符内容: 不含\"TODO\"、\"待补充\"、\"（略）\"等",
+      "passed": true,
+      "evidence": "Grep pattern (TODO|待补充|略）|（略）|[待补充]|[TODO]) across all 30 output files returned no matches."
+    },
+    {
+      "text": "内容提取质量: 从原文提取了实际要点",
+      "passed": true,
+      "evidence": "Sampled 10 files (batch1_q01, q02, q03, q04, q05, q06, q07, batch2_q01, batch3_q03, batch4_q01, batch5_q01, batch5_q05). All contain substantive content: specific legal article citations (e.g., 《民法典》第1084条, 《刑法》第312条, 《行政复议法》第23条), named expert sources, detailed reasoning sections with sub-headings, and original Q&A content. No placeholder content detected."
+    },
+    {
+      "text": "category分类: 每个文件有正确的category分类",
+      "passed": true,
+      "evidence": "Verified categories across sampled files: 劳动关系->劳动与社会保障, 子女抚养->婚姻家庭与继承, 融资融券担保->金融与财税, 股权出资评估->公司商事与合规, 破产财产涉案财产->诉讼与仲裁, 股权执行以物抵债->诉讼与仲裁, 受贿罪数罪并罚->诉讼与仲裁, 比特币挖矿->金融与财税, 遗产管理人诉权->婚姻家庭与继承, 掩饰隐瞒犯罪所得->诉讼与仲裁, 偷越国边境罪->诉讼与仲裁, 行政复议前置过渡期->政府与公共法律服务. Categories align with topic content."
+    }
+  ],
+  "summary": {
+    "passed": 5,
+    "failed": 0,
+    "total": 5,
+    "pass_rate": 1.0
+  },
+  "execution_metrics": {
+    "total_tool_calls": null,
+    "total_steps": null,
+    "errors_encountered": null,
+    "output_chars": null,
+    "transcript_chars": null
+  },
+  "timing": {
+    "executor_duration_seconds": null,
+    "grader_duration_seconds": null,
+    "total_duration_seconds": 419.4
+  },
+  "claims": [],
+  "user_notes_summary": {
+    "uncertainties": [],
+    "needs_review": [],
+    "workarounds": []
+  },
+  "eval_feedback": {
+    "suggestions": [],
+    "overall": "No suggestions. All assertions passed with clear evidence."
+  }
+}

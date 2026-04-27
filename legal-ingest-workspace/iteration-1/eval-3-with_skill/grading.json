@@ -1,0 +1,81 @@
+{
+  "expectations": [
+    {
+      "text": "文件数量: 生成了1个synthesis文件",
+      "passed": true,
+      "evidence": "输出目录中有1个文件：synthesis_金某等组织卖淫案.md"
+    },
+    {
+      "text": "type正确: type为synthesis（不是summary）",
+      "passed": true,
+      "evidence": "文件frontmatter中明确指定 type: synthesis"
+    },
+    {
+      "text": "案件信息完整: 案号、入库编号、审理法院、裁判日期",
+      "passed": true,
+      "evidence": "案件信息包含：入库编号（2024-06-1-368-001）、一审案号（(2019)苏1302刑初895号）、二审案号（(2021)苏13刑终140号）、一审法院（江苏省宿迁市宿城区人民法院）、二审法院（江苏省宿迁市中级人民法院）、一审裁判日期（2020年12月31日）、二审裁判日期（2021年5月11日）"
+    },
+    {
+      "text": "裁判要旨: 提取了核心裁判观点",
+      "passed": true,
+      "evidence": "文件包含两条裁判要旨：（1）约购毒品并'检举揭发'不构成立功，详细阐述了四条理由；（2）上诉不加刑原则的适用"
+    },
+    {
+      "text": "涉及法条: 列出了《刑法》相关条款",
+      "passed": true,
+      "evidence": "涉及法条部分列出了：《刑法》第六十七条（自首）、第六十八条（立功）、第三百五十八条（组织卖淫罪）"
+    },
+    {
+      "text": "无占位符内容",
+      "passed": true,
+      "evidence": "文件内容完整，正文约4300字，包含案件信息、基本案情、裁判要旨、量刑情况、涉及法条、关联索引等完整章节，无任何占位符或待补充内容"
+    }
+  ],
+  "summary": {
+    "passed": 6,
+    "failed": 0,
+    "total": 6,
+    "pass_rate": 1.0
+  },
+  "execution_metrics": {
+    "output_chars": 4496,
+    "transcript_chars": 0
+  },
+  "timing": {
+    "total_duration_seconds": 63.4
+  },
+  "claims": [
+    {
+      "claim": "被告人金某在取保候审期间主动约购毒品并'检举揭发'",
+      "type": "factual",
+      "verified": true,
+      "evidence": "基本案情部分详细描述了该情节，与裁判要旨中的分析相对应"
+    },
+    {
+      "claim": "一审法院以组织卖淫罪判处金某有期徒刑三年六个月",
+      "type": "factual",
+      "verified": true,
+      "evidence": "量刑情况部分明确记载：一审判处有期徒刑三年六个月，并处罚金人民币三十六万元"
+    },
+    {
+      "claim": "二审法院维持原判",
+      "type": "factual",
+      "verified": true,
+      "evidence": "量刑情况部分记载：二审法院认为一审认定立功存在不当，但根据上诉不加刑的规定，不对其加重刑罚，维持原判"
+    }
+  ],
+  "user_notes_summary": {
+    "uncertainties": [],
+    "needs_review": [],
+    "workarounds": []
+  },
+  "eval_feedback": {
+    "suggestions": [
+      {
+        "assertion": "无占位符内容",
+        "reason": "该断言几乎没有区分度——除非故意放置'TODO'或'待补充'，任何正常生成的内容都会通过。建议与内容质量评估结合使用，或改为检查'内容完整度'（如是否包含所有必要章节）"
+      }
+    ],
+    "overall": "所有断言均通过，输出质量良好。裁判要旨提取详尽，涵盖两条核心观点并附详细理由；案件信息完整；法条引用准确。建议增强断言的区分度。"
+  }
+}

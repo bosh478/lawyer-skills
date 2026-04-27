@@ -1,0 +1,61 @@
+{
+  "expectations": [
+    {
+      "text": "文件数量: 生成了1个synthesis文件",
+      "passed": true,
+      "evidence": "Exactly 1 file found: synthesis_金某等组织卖淫案.md"
+    },
+    {
+      "text": "type正确: type为synthesis（不是summary）",
+      "passed": true,
+      "evidence": "Frontmatter line 3 shows 'type: synthesis'"
+    },
+    {
+      "text": "案件信息完整: 案号、入库编号、审理法院、裁判日期",
+      "passed": true,
+      "evidence": "案号: 一审(2019)苏1302刑初895号, 二审(2021)苏13刑终140号; 入库编号: 2024-06-1-368-001; 审理法院: 江苏省宿迁市宿城区人民法院→宿迁市中级人民法院; 裁判日期: 一审2020.12.31, 二审2021.05.11"
+    },
+    {
+      "text": "裁判要旨: 提取了核心裁判观点（两条）",
+      "passed": true,
+      "evidence": "Two distinct 裁判要旨 found: (1) 主动约购毒品并'检举揭发'不构成立功; (2) 二审对立功认定错误的处理"
+    },
+    {
+      "text": "涉及法条: 列出了《刑法》第67、68、358条",
+      "passed": true,
+      "evidence": "Lines 78-80 list 《刑法》第67条(自首), 第68条(立功), 第358条(组织卖淫罪)"
+    },
+    {
+      "text": "无占位符内容",
+      "passed": true,
+      "evidence": "File contains complete substantive content - no TODOs, placeholders, or incomplete sections"
+    }
+  ],
+  "summary": {
+    "passed": 6,
+    "failed": 0,
+    "total": 6,
+    "pass_rate": 1.0
+  },
+  "execution_metrics": {
+    "total_tool_calls": 0,
+    "total_steps": 0,
+    "errors_encountered": 0,
+    "output_chars": 5176
+  },
+  "timing": {
+    "executor_duration_seconds": 59.8,
+    "grader_duration_seconds": 0,
+    "total_duration_seconds": 59.8
+  },
+  "claims": [],
+  "user_notes_summary": {
+    "uncertainties": [],
+    "needs_review": [],
+    "workarounds": []
+  },
+  "eval_feedback": {
+    "suggestions": [],
+    "overall": "No suggestions, evals look solid"
+  }
+}

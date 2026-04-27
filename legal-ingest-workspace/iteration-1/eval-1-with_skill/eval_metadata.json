@@ -1,0 +1,6 @@
+{
+  "eval_id": 0,
+  "eval_name": "single-file-ingest",
+  "prompt": "处理这个法律文档：D:\\AI agent\\tkk-library\\sources\\微信公号资料\\最高法-法答网精选答问-md\\01法答网精选答问第一批.md，提取关键法律要点，生成 wiki/summaries/ 下的摘要文件",
+  "assertions": []
+}

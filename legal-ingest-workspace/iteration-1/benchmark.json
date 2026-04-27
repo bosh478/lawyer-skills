@@ -1,0 +1,89 @@
+{
+  "skill_name": "legal-ingest",
+  "iteration": 1,
+  "runs": [
+    {
+      "run_id": "eval-1-with_skill",
+      "config": "with_skill",
+      "eval_name": "single-file-ingest",
+      "pass_rate": 0.8,
+      "total_assertions": 5,
+      "passed_assertions": 4,
+      "duration_seconds": 83.8,
+      "total_tokens": 0,
+      "notes": "FAIL: file saved to eval outputs dir instead of wiki/summaries/ — eval setup issue, not skill content issue"
+    },
+    {
+      "run_id": "eval-1-without_skill",
+      "config": "without_skill",
+      "eval_name": "single-file-ingest",
+      "pass_rate": 1.0,
+      "total_assertions": 5,
+      "passed_assertions": 5,
+      "duration_seconds": 141.3,
+      "total_tokens": 25792,
+      "notes": ""
+    },
+    {
+      "run_id": "eval-2-with_skill",
+      "config": "with_skill",
+      "eval_name": "batch-five-files-ingest",
+      "pass_rate": 0.6,
+      "total_assertions": 5,
+      "passed_assertions": 3,
+      "duration_seconds": 409.2,
+      "total_tokens": 55337,
+      "notes": "2 FAIL due to no transcript to verify count reconciliation claim and file listing — content quality all PASS"
+    },
+    {
+      "run_id": "eval-2-without_skill",
+      "config": "without_skill",
+      "eval_name": "batch-five-files-ingest",
+      "pass_rate": 1.0,
+      "total_assertions": 5,
+      "passed_assertions": 5,
+      "duration_seconds": 419.4,
+      "total_tokens": 67290,
+      "notes": "Generated 30 files (each Q&A separate), all high quality"
+    },
+    {
+      "run_id": "eval-3-with_skill",
+      "config": "with_skill",
+      "eval_name": "case-synthesis-ingest",
+      "pass_rate": 1.0,
+      "total_assertions": 6,
+      "passed_assertions": 6,
+      "duration_seconds": 63.4,
+      "total_tokens": 0,
+      "notes": "100% — synthesis file with complete case info, 2 裁判要旨, 涉及法条"
+    },
+    {
+      "run_id": "eval-3-without_skill",
+      "config": "without_skill",
+      "eval_name": "case-synthesis-ingest",
+      "pass_rate": 1.0,
+      "total_assertions": 6,
+      "passed_assertions": 6,
+      "duration_seconds": 59.8,
+      "total_tokens": 0,
+      "notes": "100% — 2条裁判要旨完整提取"
+    }
+  ],
+  "summary": {
+    "with_skill": {
+      "pass_rate": 0.81,
+      "avg_duration_seconds": 185.5,
+      "total_tokens": 55337
+    },
+    "without_skill": {
+      "pass_rate": 1.0,
+      "avg_duration_seconds": 206.8,
+      "total_tokens": 93082
+    },
+    "delta": {
+      "pass_rate_diff": -0.19,
+      "time_diff_seconds": -21.3,
+      "token_diff": -37745
+    }
+  }
+}

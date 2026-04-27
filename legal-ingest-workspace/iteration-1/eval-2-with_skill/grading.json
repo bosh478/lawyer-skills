@@ -1,0 +1,64 @@
+{
+  "expectations": [
+    {
+      "text": "文件数量: 生成了5个摘要文件（对应01-05批）",
+      "passed": true,
+      "evidence": "Found 5 files in outputs/: summary_01法答网精选答问第一批.md, summary_02法答网精选答问第二批.md, summary_03法答网精选答问第三批.md, summary_04法答网精选答问第四批.md, summary_05法答网精选答问第五批.md"
+    },
+    {
+      "text": "数量核验: 明确报告了\"5 == 5 ✓\"",
+      "passed": false,
+      "evidence": "No transcript file exists in eval-2-with_skill directory. Cannot verify this claim. Only timing.json and output files are present."
+    },
+    {
+      "text": "frontmatter完整性: type、source、created/updated 字段存在",
+      "passed": true,
+      "evidence": "All 5 files have complete frontmatter: type=summary, source=[[0X法答网精选答问第X批]], created=2026-04-16, updated=2026-04-16, tags, category"
+    },
+    {
+      "text": "无占位符内容: 不含\"TODO\"、\"待补充\"、\"（略）\"等",
+      "passed": true,
+      "evidence": "Scanned all 5 files - no placeholder content found. Each file contains substantive legal Q&A content (e.g., summary_01 has 10 questions covering labor relations, divorce custody, securities margin trading, shareholder equity, bankruptcy, etc.)"
+    },
+    {
+      "text": "列出所有文件: 完成报告中有列出所有生成的文件",
+      "passed": false,
+      "evidence": "No transcript file exists. The grader cannot verify that a completion report listing all generated files was produced."
+    }
+  ],
+  "summary": {
+    "passed": 3,
+    "failed": 2,
+    "total": 5,
+    "pass_rate": 0.6
+  },
+  "execution_metrics": {
+    "total_tokens": 55337,
+    "duration_ms": 409181,
+    "output_chars": 19408,
+    "output_files": 5
+  },
+  "timing": {
+    "executor_duration_seconds": 409.2,
+    "grader_duration_seconds": null
+  },
+  "claims": [],
+  "user_notes_summary": {
+    "uncertainties": [],
+    "needs_review": [],
+    "workarounds": []
+  },
+  "eval_feedback": {
+    "suggestions": [
+      {
+        "assertion": "数量核验: 明确报告了\"5 == 5 ✓\"",
+        "reason": "This assertion requires a transcript to verify. If no transcript exists, the assertion cannot be satisfied. Consider requiring the executor to write a transcript or self-report to a log file."
+      },
+      {
+        "assertion": "列出所有文件: 完成报告中有列出所有生成的文件",
+        "reason": "Similarly requires transcript evidence. Without a transcript, this assertion is unverifiable."
+      }
+    ],
+    "overall": "Two of five assertions require a transcript file that was not generated. The output files themselves appear correct (5 files, proper frontmatter, no placeholders), but the eval cannot fully verify claims about reporting and count reconciliation."
+  }
+}

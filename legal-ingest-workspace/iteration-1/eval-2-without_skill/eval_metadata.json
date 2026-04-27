@@ -1,0 +1,6 @@
+{
+  "eval_id": 1,
+  "eval_name": "batch-five-files-ingest",
+  "prompt": "批量处理 D:\\AI agent\\tkk-library\\sources\\微信公号资料\\最高法-法答网精选答问-md\\ 目录下所有文件（01-05批），提取法律问答要点，生成 wiki/summaries/ 下的摘要文件。处理完成后列出所有生成的文件并核对数量。",
+  "assertions": []
+}
