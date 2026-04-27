@@ -137,6 +137,95 @@ function mkTempDir(prefix) {
   return fullPath;
 }
 
+// ============ Native CLI (Windows) ============
+function findNativeCli() {
+  if (process.platform !== 'win32') return '';
+  // Check common Python package locations for the mineru CLI binary
+  const possiblePaths = [
+    path.join(process.env.APPDATA || '', 'Python', 'Python314', 'Lib', 'site-packages', 'mineru_open_api', 'bin', 'mineru-open-api-windows-amd64.exe'),
+    path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Python', 'Python314', 'Lib', 'site-packages', 'mineru_open_api', 'bin', 'mineru-open-api-windows-amd64.exe'),
+    'C:\\Program Files\\Python314\\Lib\\site-packages\\mineru_open_api\\bin\\mineru-open-api-windows-amd64.exe',
+  ];
+  // Also try using Python to find the package location
+  try {
+    const pythonPath = execSync('python -c "import mineru_open_api; print(mineru_open_api.__path__[0])" 2>nul', { encoding: 'utf8', shell: true }).trim();
+    if (pythonPath) {
+      possiblePaths.unshift(path.join(pythonPath, 'bin', 'mineru-open-api-windows-amd64.exe'));
+    }
+  } catch (e) {}
+  for (const p of possiblePaths) {
+    if (fs.existsSync(p)) return p;
+  }
+  return '';
+}
+
+async function convertWithNativeCli(source, info, skillRoot, log) {
+  const cliPath = findNativeCli();
+  if (!cliPath) {
+    throw new Error('Native CLI not found');
+  }
+
+  const workDir = mkTempDir('mineru_native');
+  const outputFile = path.join(workDir, 'output.md');
+  const outputDir = path.join(workDir, 'out');
+
+  try {
+    // Normalize Windows path for CLI
+    let filePath = source;
+    if (process.platform === 'win32') {
+      filePath = normalizeWindowsPath(filePath);
+    }
+
+    log('Using native MinerU CLI for token conversion...', 2);
+
+    // Run the native CLI extract command
+    // Quote the CLI path and file paths to handle spaces on Windows
+    const quotedCli = '"' + cliPath + '"';
+    const quotedFile = '"' + filePath + '"';
+    const quotedOut = '"' + outputDir + '"';
+    const cmd = quotedCli + ' extract ' + quotedFile + ' -o ' + quotedOut;
+    const result = await new Promise((resolve, reject) => {
+      const proc = spawn(cmd, [], { shell: true, windowsHide: true });
+      let stdout = '';
+      let stderr = '';
+      proc.stdout.on('data', (data) => { stdout += data.toString(); });
+      proc.stderr.on('data', (data) => { stderr += data.toString(); });
+      proc.on('close', (code) => {
+        if (code === 0) resolve({ code, stdout, stderr });
+        else reject(new Error(`Native CLI exited with code ${code}: ${stderr}`));
+      });
+      proc.on('error', reject);
+    });
+
+    // Find the output markdown
+    const outFiles = findFiles(outputDir, /\.md$/);
+    if (outFiles.length > 0) {
+      const mdFile = path.join(workDir, 'full.md');
+      fs.copyFileSync(outFiles[0], mdFile);
+      return finalizeResult(workDir, skillRoot, info, mdFile, {
+        mode: 'token',
+        sourceFile: source,
+        detail: { method: 'native_cli' }
+      }, log);
+    }
+
+    // If no markdown found but we got stdout, use stdout
+    if (result.stdout.trim()) {
+      const mdFile = path.join(workDir, 'full.md');
+      writeTextFile(mdFile, result.stdout);
+      return finalizeResult(workDir, skillRoot, info, mdFile, {
+        mode: 'token',
+        sourceFile: source,
+        detail: { method: 'native_cli_stdout' }
+      }, log);
+    }
+
+    throw new Error('Native CLI produced no output');
+  } finally {
+    rmrf(workDir);
+  }
+}
+
 // ============ Shell utilities ============
 function shell(cmd) {
   try {
@@ -568,9 +657,7 @@ async function convertLocalFileWithTokenApi(filePath, info, options, log) {
     };
 
     const rawBody = JSON.stringify(req1);
-    log('Token API request body: ' + rawBody, 2);
-    log('Token API token prefix: ' + (API_TOKEN ? API_TOKEN.substring(0, 20) : 'EMPTY'), 2);
-    log('Token API body bytes: ' + Buffer.byteLength(rawBody), 2);
+    const rawBody = JSON.stringify(req1);
 
     const resp1 = await httpRequest(API_BASE + '/file-urls/batch', {
       method: 'POST',
@@ -581,12 +668,6 @@ async function convertLocalFileWithTokenApi(filePath, info, options, log) {
       },
       body: rawBody
     });
-
-    log('Token API response: ' + resp1.body.substring(0, 500), 2);
-
-    // Debug OSS headers
-    const rawTicket = JSON.parse(resp1.body);
-    log('OSS headers from API: ' + JSON.stringify(rawTicket.headers || rawTicket.data && rawTicket.data.headers || []).substring(0, 300), 2);
 
     if (resp1.status !== 200 && resp1.status !== 201) {
       if (resp1.status === 401 || resp1.status === 403 || resp1.body.indexOf('Unauthorized') > -1) {
@@ -616,9 +697,8 @@ async function convertLocalFileWithTokenApi(filePath, info, options, log) {
     uploadURL = String(uploadURL).replace(/[\n\r\t]+/g, ' ');
 
     log('开始上传文件到标准 Token API...', 2);
-    log('Upload URL: ' + uploadURL.substring(0, 200), 2);
+
     const fileContent = fs.readFileSync(inputFile);
-    log('File size: ' + fileContent.length + ' bytes', 2);
 
     const uploadResp = await httpRequest(uploadURL, {
       method: 'PUT',
@@ -628,9 +708,6 @@ async function convertLocalFileWithTokenApi(filePath, info, options, log) {
       },
       body: fileContent
     });
-
-    log('Upload response status: ' + uploadResp.status, 2);
-    log('Upload response body: ' + (uploadResp.body || '').substring(0, 300), 2);
 
     if (uploadResp.status !== 200 && uploadResp.status !== 201) {
       throw new Error('文件上传失败 (HTTP ' + uploadResp.status + ')');
@@ -1114,6 +1191,15 @@ async function convert(source) {
 
   if (mode === 'token') {
     if (info.sourceType === 'local_file') {
+      // On Windows, try native CLI first for Token API (it handles OSS upload correctly)
+      if (process.platform === 'win32' && findNativeCli()) {
+        try {
+          return await convertWithNativeCli(source, info, skillRoot, log);
+        } catch (e) {
+          log('Native CLI failed, falling back to direct API: ' + e.message, 2);
+          // Fall through to direct API
+        }
+      }
       return await convertLocalFileWithTokenApi(source, info, options, log);
     }
     return await convertRemoteUrlWithTokenApi(source, info, options, log);
