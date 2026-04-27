@@ -65,11 +65,11 @@ description: 法律文档 Ingest Skill — 将法律文档编译为 Obsidian wik
 ## @自动模式：Clippings 检测触发
 
 **@触发机制**：
-当 skill 被调用时，自动检查 `Clippings/` 目录是否存在 .md 文件。
+当 skill 被调用时，自动检查 vault 根目录下的 `Clippings/` 目录是否存在 .md 文件。
 
 **@检测命令**：
 ```bash
-ls sources/Clippings/*.md 2>/dev/null | wc -l
+ls D:/AI\ agent/tkk-library/Clippings/*.md 2>/dev/null | wc -l
 ```
 
 **@行为逻辑**：
@@ -81,11 +81,11 @@ ls sources/Clippings/*.md 2>/dev/null | wc -l
 
 **@自动 ingest 执行流程**：
 ```
-检测到 Clippings/*.md
+检测到 D:/AI\ agent/tkk-library/Clippings/*.md
     ↓
 自动执行 ingest（阶段一→阶段五）
     ↓
-阶段四完成后：自动移动文件到 sources/网络文章/
+阶段四完成后：询问用户是否归档到 sources/网络文章/
     ↓
 阶段五：生成完成报告，询问用户下一步
 ```
@@ -93,6 +93,7 @@ ls sources/Clippings/*.md 2>/dev/null | wc -l
 **@用户干预时机**：
 - 可以在任意时刻说"取消"或"停止"终止自动流程
 - 自动流程完成后，默认进入等待状态，可继续执行其他操作
+- 是否将 Clippings 文件移动到 sources/网络文章/，由用户决定（不强制）
 
 **@为什么自动执行**：
 Clippings/ 是用户主动放入的待整理资料，放入即表示需要处理——无需二次确认，直接开始整理。
@@ -342,14 +343,14 @@ HF_ENDPOINT=https://hf-mirror.com qmd embed
 
 ---
 
-### 阶段四补充：Clippings 文件处理（自动归档）
+### 阶段四补充：Clippings 文件处理（可选归档）
 
-当 ingest 的源文件来自 `Clippings/` 文件夹时，**阶段四整合入库完成后**，必须执行以下操作：
-
+当 ingest 的源文件来自 vault 根目录下的 `Clippings/` 文件夹时，**阶段四整合入库完成后**：
+- **不自动移动文件**，询问用户是否归档到 sources/网络文章/
+- 若用户要求移动，执行以下命令：
 ```bash
-# 将已处理的 Clippings 文件移动到 sources/网络文章/ 目录下
-for f in sources/Clippings/*.md; do
-  target_dir="sources/网络文章/"
+for f in D:/AI\ agent/tkk-library/Clippings/*.md; do
+  target_dir="D:/AI agent/tkk-library/sources/网络文章/"
   [ -d "$target_dir" ] && mv "$f" "$target_dir" 2>/dev/null
 done
 ```
@@ -358,12 +359,12 @@ done
 - 需要确保 wiki 页面已正确创建（source 字段已指向源文件）
 - 需要确保 sources/INDEX.md 已更新（源文件路径已变更）
 
-**@移动规则**：
+**@移动规则**（若用户决定归档）：
 - 源文件移动到 `sources/网络文章/` 目录
 - 保留原始文件名不变
-- 移动后 sources/Clippings/ 目录清空
+- 移动后 Clippings/ 目录清空
 
-**⚠️ 注意**：此规则仅适用于 `Clippings/` 文件夹，其他来源目录的源文件**不得移动**。
+**⚠️ 注意**：此规则仅适用于 vault 根目录下的 `Clippings/` 文件夹，其他来源目录的源文件**不得移动**。
 
 ---
 
@@ -805,6 +806,7 @@ version: 3
 
 | 版本 | 日期 | 变化 |
 |------|------|------|
+| v32 | 2026-04-27 | 修正Clippings路径：Clippings目录位于vault根目录而非sources/子目录，检测命令和移动命令已更新；移动行为改为可选（用户决定是否归档） |
 | v31 | 2026-04-27 | 新增"首次扫描与末次扫描铁律"：ingest操作前记录基准数量，操作后再次扫描对比，确保处理期间新增文件不被遗漏 |
 | v30 | 2026-04-27 | 新增4条验证约束：声称状态前必须验证工具输出、完成交付验证标准（输出验证数据）、修改SKILL前验证git状态、Sub-agent结果主会话验证 |
 | v29 | 2026-04-27 | 新增"目录扫描后穷尽验证"执行纪律：阶段二/三完成后必须重新扫描源目录验证文件数量，防止凭记忆下结论导致遗漏 |
