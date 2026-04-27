@@ -1,86 +1,248 @@
-// MinerU PDF ¡ú Markdown Converter
-// Ä¬ÈÏ auto Ä£Ê½£ºÓĞ Token ×ß±ê×¼ API£¬ÎŞ Token ×ßÃâµÇÂ¼ÇáÁ¿½Ó¿Ú
+// MinerU PDF è½¬ Markdown Converter
+// Windows-compatible version (pure Node.js)
+// é»˜è®¤ auto æ¨¡å¼ï¼šæ—  Token æ—¶ä½¿ç”¨å…è´¹æ¥å£ï¼Œæœ‰ Token æ—¶ä½¿ç”¨æ ‡å‡† API
 
-ObjC.import("Foundation");
-ObjC.import("stdlib");
+const https = require('https');
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const { execSync, spawn } = require('child_process');
+const crypto = require('crypto');
 
-function readTextFile(path) {
-  const data = $.NSData.dataWithContentsOfFile(path);
-  if (!data) {
-    return "";
-  }
-  return ObjC.unwrap($.NSString.alloc.initWithDataEncoding(data, $.NSUTF8StringEncoding)) || "";
+// ============ Path utilities ============
+function resolveSkillRoot() {
+  // Navigate from script location to skill root
+  const scriptDir = __dirname;
+  return path.dirname(scriptDir); // goes up from /scripts to /mineru-ocr
 }
 
-function runShellResult(cmd) {
-  const sq = (value) => "'" + String(value).replace(/'/g, "'\\''") + "'";
-  const nonce = `${Date.now()}_${Math.floor(Math.random() * 1000000)}`;
-  const outPath = `/tmp/mineru_jxa_stdout_${nonce}.txt`;
-  const errPath = `/tmp/mineru_jxa_stderr_${nonce}.txt`;
-  const statusPath = `/tmp/mineru_jxa_status_${nonce}.txt`;
-  const wrapped = `( ${cmd} ) > ${sq(outPath)} 2> ${sq(errPath)}; printf %s $? > ${sq(statusPath)}`;
-  const systemStatus = $.system(`/bin/zsh -lc ${sq(wrapped)}`);
-  void systemStatus;
-
-  const outputText = readTextFile(outPath);
-  const errorText = readTextFile(errPath);
-  const statusText = readTextFile(statusPath).trim();
-  const exitCode = parseInt(statusText || "1", 10);
-
-  return {
-    stdout: String(outputText).replace(/\n$/, ""),
-    stderr: String(errorText).replace(/\n$/, ""),
-    exitCode: isNaN(exitCode) ? 1 : exitCode
-  };
+function resolveHomeDir() {
+  if (process.platform === 'win32') {
+    return process.env.USERPROFILE || process.env.HOME || '';
+  }
+  return process.env.HOME || '';
 }
 
-function runShell(cmd) {
-  const result = runShellResult(cmd);
-
-  if (result.exitCode !== 0) {
-    throw new Error((result.stderr || result.stdout || `shell failed (${result.exitCode})`).trim());
+function normalizeWindowsPath(source) {
+  // On Windows, bash strips backslashes from "C:\path\file.pdf"
+  // and node receives "C:pathfile.pdf". Detect by [drive]:[non-separator] pattern.
+  if (process.platform === 'win32') {
+    const m = source.match(/^([A-Za-z]:)([^/\\])/);
+    if (m) {
+      source = m[1] + '/' + m[2];
+      source = source.replace(/\\/g, '/');
+    }
   }
+  return source;
+}
 
-  return result.stdout;
+function sanitizeConfigValue(value) {
+  const text = String(value || '').trim();
+  if (!text) return '';
+  const lowered = text.toLowerCase();
+  if (lowered === 'your_token_here' ||
+      lowered === 'your_mineru_api_token_here' ||
+      text.indexOf('example') > -1) {
+    return '';
+  }
+  return text;
+}
+
+function parseBoolean(value, fallback) {
+  if (typeof value === 'undefined' || value === null || String(value).trim() === '') {
+    return fallback;
+  }
+  const lowered = String(value).trim().toLowerCase();
+  if (['true', '1', 'yes', 'on'].indexOf(lowered) > -1) return true;
+  if (['false', '0', 'no', 'off'].indexOf(lowered) > -1) return false;
+  return fallback;
+}
+
+function parseInteger(value, fallback) {
+  const parsed = parseInt(value, 10);
+  return isNaN(parsed) ? fallback : parsed;
+}
+
+function normalizePageRanges(value) {
+  return String(value || '').trim().replace(/\s+/g, '');
+}
+
+function resolveTokenModelVersion(configuredValue, sourceType) {
+  if (sourceType === 'remote_html_url') return 'MinerU-HTML';
+  const value = String(configuredValue || '').trim();
+  if (value === 'vlm') return 'vlm';
+  return 'pipeline';
+}
+
+function isHttpUrl(value) {
+  return /^https?:\/\//i.test(String(value || '').trim());
+}
+
+function hasKnownExtension(name, exts) {
+  const lowered = String(name || '').toLowerCase();
+  for (let i = 0; i < exts.length; i++) {
+    if (lowered.endsWith('.' + exts[i])) return true;
+  }
+  return false;
+}
+
+function extractPathWithoutQuery(url) {
+  return String(url || '').split('?')[0].split('#')[0];
+}
+
+function deriveNameFromUrl(url) {
+  const p = extractPathWithoutQuery(url);
+  const parts = p.split('/');
+  return parts[parts.length - 1] || 'remote-document';
+}
+
+function sanitizeFileName(name, fallback) {
+  const cleaned = String(name || '')
+    .replace(/[^0-9A-Za-z._\-ä¸€-é¿¿]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return cleaned || fallback;
+}
+
+function isHtmlLikeUrl(url) {
+  const p = extractPathWithoutQuery(url).toLowerCase();
+  if (p.endsWith('.html') || p.endsWith('.htm')) return true;
+  const docExts = ['pdf', 'doc', 'docx', 'ppt', 'pptx', 'png', 'jpg', 'jpeg', 'jp2', 'webp', 'gif', 'bmp', 'xls', 'xlsx'];
+  return !hasKnownExtension(p, docExts);
+}
+
+function zeroPad(num) {
+  return num < 10 ? '0' + num : String(num);
+}
+
+function buildArchiveSubDir(skillRoot, baseNameNoExt) {
+  const now = new Date();
+  const dateStr = now.getFullYear() + zeroPad(now.getMonth() + 1) + zeroPad(now.getDate());
+  const timeStr = zeroPad(now.getHours()) + zeroPad(now.getMinutes()) + zeroPad(now.getSeconds());
+  return path.join(skillRoot, 'archive', `${dateStr}_${timeStr}_${baseNameNoExt}`);
+}
+
+function getTmpDir() {
+  if (process.platform === 'win32') {
+    return process.env.TEMP || process.env.TMP || path.join(os.tmpdir());
+  }
+  return os.tmpdir();
+}
+
+function mkTempDir(prefix) {
+  const tmpDir = getTmpDir();
+  const name = `${prefix}_${Date.now()}_${Math.floor(Math.random() * 1000000)}`;
+  const fullPath = path.join(tmpDir, name);
+  fs.mkdirSync(fullPath, { recursive: true });
+  return fullPath;
+}
+
+// ============ Shell utilities ============
+function shell(cmd) {
+  try {
+    return execSync(cmd, { encoding: 'utf8', shell: true, maxBuffer: 50 * 1024 * 1024 }).trim();
+  } catch (e) {
+    return '';
+  }
 }
 
 function shellQuote(value) {
-  return "'" + String(value).replace(/'/g, "'\\''") + "'";
+  // Windows cmd quoting
+  return '"' + String(value).replace(/"/g, '""') + '"';
 }
 
-function getSkillRoot(sh) {
-  const projectRoot = sh("pwd").trim();
-  return projectRoot + "/.claude/skills/mineru-ocr";
+function getFileSize(filePath) {
+  try {
+    const stats = fs.statSync(filePath);
+    return stats.size;
+  } catch (e) {
+    return 0;
+  }
 }
 
+function getPdfPageCount(filePath) {
+  try {
+    // Use pdf-parse via node if available, otherwise try external tool
+    const result = execSync(`pdfinfo "${filePath}" 2>nul || echo "0"`, { encoding: 'utf8', shell: true });
+    const match = result.match(/Pages:\s*(\d+)/);
+    if (match) return parseInt(match[1], 10);
+  } catch (e) {
+    // pdfinfo not available
+  }
+  return null;
+}
+
+function copyFile(src, dest) {
+  fs.copyFileSync(src, dest);
+}
+
+function mkdirp(dir) {
+  fs.mkdirSync(dir, { recursive: true });
+}
+
+function rmrf(dir) {
+  if (fs.existsSync(dir)) {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+function findFiles(dir, pattern) {
+  const results = [];
+  function walk(d) {
+    try {
+      const items = fs.readdirSync(d);
+      for (const item of items) {
+        const full = path.join(d, item);
+        try {
+          const stat = fs.statSync(full);
+          if (stat.isDirectory()) {
+            walk(full);
+          } else if (pattern.test(item)) {
+            results.push(full);
+          }
+        } catch (e) {}
+      }
+    } catch (e) {}
+  }
+  walk(dir);
+  return results;
+}
+
+function readTextFile(filePath) {
+  try {
+    return fs.readFileSync(filePath, 'utf8');
+  } catch (e) {
+    return '';
+  }
+}
+
+function writeTextFile(filePath, content) {
+  fs.writeFileSync(filePath, content, 'utf8');
+}
+
+function writeJsonFile(filePath, payload) {
+  fs.writeFileSync(filePath, JSON.stringify(payload, null, 2), 'utf8');
+}
+
+// ============ Config loading ============
 function loadConfig(skillRoot) {
-  const sh = runShell;
-  const envPath = skillRoot + "/config/.env";
-  const envExists = sh(`/bin/test -f ${shellQuote(envPath)} && echo 1 || echo 0`).trim() === "1";
-  const config = {
-    __envPath: envPath,
-    __envExists: envExists
-  };
+  const envPath = path.join(skillRoot, 'config', '.env');
+  const config = { __envPath: envPath, __envExists: false };
 
-  if (!envExists) {
+  if (!fs.existsSync(envPath)) {
     return config;
   }
 
-  const envContent = sh('/bin/cat ' + shellQuote(envPath) + ' 2>/dev/null || echo ""');
-  if (!envContent) {
-    throw new Error("ÎŞ·¨¶ÁÈ¡ÅäÖÃÎÄ¼ş: " + envPath);
-  }
+  config.__envExists = true;
+  const content = readTextFile(envPath);
+  if (!content) throw new Error('æ— æ³•è¯»å–é…ç½®æ–‡ä»¶: ' + envPath);
 
-  const lines = envContent.match(/[^\r\n]+/g) || [];
+  const lines = content.match(/[^\r\n]+/g) || [];
   for (const line of lines) {
     const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) {
-      continue;
-    }
-    const equalIndex = trimmed.indexOf("=");
-    if (equalIndex <= 0) {
-      continue;
-    }
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const equalIndex = trimmed.indexOf('=');
+    if (equalIndex <= 0) continue;
     const key = trimmed.substring(0, equalIndex).trim();
     let value = trimmed.substring(equalIndex + 1).trim();
     if ((value.startsWith('"') && value.endsWith('"')) ||
@@ -93,134 +255,15 @@ function loadConfig(skillRoot) {
   return config;
 }
 
-function sanitizeConfigValue(value) {
-  const text = String(value || "").trim();
-  if (!text) {
-    return "";
-  }
-  const lowered = text.toLowerCase();
-  if (lowered === "your_token_here" ||
-      lowered === "your_mineru_api_token_here" ||
-      lowered.indexOf("example") > -1) {
-    return "";
-  }
-  return text;
-}
+function readOfficialCliToken() {
+  const homeDir = resolveHomeDir();
+  if (!homeDir) return '';
 
-function parseBoolean(value, fallback) {
-  if (typeof value === "undefined" || value === null || String(value).trim() === "") {
-    return fallback;
-  }
-  const lowered = String(value).trim().toLowerCase();
-  if (["true", "1", "yes", "on"].indexOf(lowered) > -1) {
-    return true;
-  }
-  if (["false", "0", "no", "off"].indexOf(lowered) > -1) {
-    return false;
-  }
-  return fallback;
-}
+  const yamlPath = path.join(homeDir, '.mineru', 'config.yaml');
+  if (!fs.existsSync(yamlPath)) return '';
 
-function parseInteger(value, fallback) {
-  const parsed = parseInt(value, 10);
-  return isNaN(parsed) ? fallback : parsed;
-}
-
-function normalizePageRanges(value) {
-  const text = String(value || "").trim();
-  if (!text) {
-    return "";
-  }
-  return text.replace(/\s+/g, "");
-}
-
-function resolveTokenModelVersion(configuredValue, sourceType) {
-  if (sourceType === "remote_html_url") {
-    return "MinerU-HTML";
-  }
-
-  const value = String(configuredValue || "").trim();
-  if (value === "vlm") {
-    return "vlm";
-  }
-  return "pipeline";
-}
-
-function isHttpUrl(value) {
-  return /^https?:\/\//i.test(String(value || "").trim());
-}
-
-function hasKnownExtension(name, exts) {
-  const lowered = String(name || "").toLowerCase();
-  for (let i = 0; i < exts.length; i++) {
-    if (lowered.endsWith("." + exts[i])) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function extractPathWithoutQuery(url) {
-  return String(url || "").split("?")[0].split("#")[0];
-}
-
-function deriveNameFromUrl(url) {
-  const path = extractPathWithoutQuery(url);
-  const parts = path.split("/");
-  return parts[parts.length - 1] || "remote-document";
-}
-
-function sanitizeFileName(name, fallback) {
-  const cleaned = String(name || "")
-    .replace(/[^0-9A-Za-z._\-\u4e00-\u9fff]+/g, "_")
-    .replace(/^_+|_+$/g, "");
-  return cleaned || fallback;
-}
-
-function isHtmlLikeUrl(url) {
-  const path = extractPathWithoutQuery(url).toLowerCase();
-  if (path.endsWith(".html") || path.endsWith(".htm")) {
-    return true;
-  }
-  const docExts = ["pdf", "doc", "docx", "ppt", "pptx", "png", "jpg", "jpeg", "jp2", "webp", "gif", "bmp", "xls", "xlsx"];
-  return !hasKnownExtension(path, docExts);
-}
-
-function zeroPad(num) {
-  return num < 10 ? "0" + num : String(num);
-}
-
-function buildArchiveSubDir(skillRoot, baseNameNoExt) {
-  const now = new Date();
-  const dateStr = now.getFullYear() + zeroPad(now.getMonth() + 1) + zeroPad(now.getDate());
-  const timeStr = zeroPad(now.getHours()) + zeroPad(now.getMinutes()) + zeroPad(now.getSeconds());
-  return `${skillRoot}/archive/${dateStr}_${timeStr}_${baseNameNoExt}`;
-}
-
-function writeTextFile(sh, filePath, content) {
-  sh(`/usr/bin/printf %s ${shellQuote(content)} > ${shellQuote(filePath)}`);
-}
-
-function writeJsonFile(sh, filePath, payload) {
-  writeTextFile(sh, filePath, JSON.stringify(payload, null, 2));
-}
-
-function readOfficialCliToken(sh) {
-  const homeDir = sanitizeConfigValue(sh("/usr/bin/printenv HOME 2>/dev/null || true"));
-  if (!homeDir) {
-    return "";
-  }
-
-  const yamlPath = `${homeDir}/.mineru/config.yaml`;
-  const exists = sh(`/bin/test -f ${shellQuote(yamlPath)} && echo 1 || echo 0`).trim() === "1";
-  if (!exists) {
-    return "";
-  }
-
-  const yamlContent = sh(`/bin/cat ${shellQuote(yamlPath)} 2>/dev/null || echo ""`);
-  if (!yamlContent) {
-    return "";
-  }
+  const yamlContent = readTextFile(yamlPath);
+  if (!yamlContent) return '';
 
   const patterns = [
     /^\s*token\s*:\s*["']?([^"'#\r\n]+)["']?\s*$/m,
@@ -228,168 +271,164 @@ function readOfficialCliToken(sh) {
     /^\s*mineru_token\s*:\s*["']?([^"'#\r\n]+)["']?\s*$/m
   ];
 
-  for (let i = 0; i < patterns.length; i++) {
-    const match = yamlContent.match(patterns[i]);
+  for (const pattern of patterns) {
+    const match = yamlContent.match(pattern);
     if (match && match[1]) {
       const token = sanitizeConfigValue(match[1]);
-      if (token) {
-        return token;
-      }
+      if (token) return token;
     }
   }
-
-  return "";
+  return '';
 }
 
-function resolveApiToken(sh, config) {
+function resolveApiToken(config) {
   const configuredToken = sanitizeConfigValue(config.MINERU_API_TOKEN);
-  if (configuredToken) {
-    return configuredToken;
-  }
-  const envToken = sanitizeConfigValue(sh("/usr/bin/printenv MINERU_API_TOKEN 2>/dev/null || true"));
-  if (envToken) {
-    return envToken;
-  }
-  const fallbackEnvToken = sanitizeConfigValue(sh("/usr/bin/printenv MINERU_TOKEN 2>/dev/null || true"));
-  if (fallbackEnvToken) {
-    return fallbackEnvToken;
-  }
-  return readOfficialCliToken(sh);
+  if (configuredToken) return configuredToken;
+
+  const envToken = sanitizeConfigValue(process.env.MINERU_API_TOKEN || '');
+  if (envToken) return envToken;
+
+  const fallbackEnvToken = sanitizeConfigValue(process.env.MINERU_TOKEN || '');
+  if (fallbackEnvToken) return fallbackEnvToken;
+
+  return readOfficialCliToken();
 }
 
+// ============ HTTP utilities ============
+function httpRequest(url, options) {
+  return new Promise((resolve, reject) => {
+    const mod = url.startsWith('https') ? https : http;
+    const req = mod.request(url, options, (res) => {
+      const chunks = [];
+      res.on('data', chunk => chunks.push(chunk));
+      res.on('end', () => {
+        const body = Buffer.concat(chunks).toString();
+        resolve({ status: res.statusCode, headers: res.headers, body });
+      });
+    });
+    req.on('error', reject);
+    req.setTimeout(60000, () => { req.destroy(); reject(new Error('Request timeout')); });
+    if (options.body) req.write(options.body);
+    req.end();
+  });
+}
+
+function downloadFile(url, destPath) {
+  return new Promise((resolve, reject) => {
+    const mod = url.startsWith('https') ? https : http;
+    const req = mod.get(url, { headers: { 'User-Agent': 'Mozilla/5.0' } }, (res) => {
+      if (res.statusCode === 301 || res.statusCode === 302) {
+        downloadFile(res.headers.location, destPath).then(resolve).catch(reject);
+        return;
+      }
+      const stream = fs.createWriteStream(destPath);
+      res.pipe(stream);
+      stream.on('finish', () => resolve(res.statusCode));
+      stream.on('error', reject);
+    });
+    req.on('error', reject);
+    req.setTimeout(30000, () => { req.destroy(); reject(new Error('Download timeout')); });
+  });
+}
+
+// ============ Help messages ============
 function buildTokenSetupHelp(skillRoot, reason) {
-  return "\n===============================================\n" +
-         "½¨ÒéÅäÖÃ MinerU Token\n" +
-         "===============================================\n" +
-         (reason ? reason + "\n\n" : "") +
-         "µ±Ç°Ä¬ÈÏÊ¹ÓÃÃâµÇÂ¼ÇáÁ¿½Ó¿Ú£¬ÊÊºÏ¿ìËÙ×ª»»£»ÈçÓöµ½ÏŞÁ÷¡¢´óÎÄ¼ş»òÒ³Êı³¬ÏŞ£¬ÇëÇĞ»»µ½±ê×¼ API¡£\n\n" +
-         "ÅäÖÃ·½·¨£º\n" +
-         "1. ·ÃÎÊÉêÇë Token£º\n" +
-         "   https://mineru.net/apiManage/token\n\n" +
-         "2. ¸æËß AI£º\"°ïÎÒÅäÖÃ MinerU£¬Token ÊÇ£ºxxx\"\n\n" +
-         "   »òÊÖ¶¯ÅäÖÃ£º\n" +
-         "   cp " + skillRoot + "/config/.env.example " + skillRoot + "/config/.env\n" +
-         "   nano " + skillRoot + "/config/.env\n\n" +
-         "µ±Ç°°´×îĞÂ¹æÔò¼ÇÎª£ºToken ÓĞĞ§ÆÚ 3 ¸öÔÂ£¨Ô¼ 90 Ìì£©¡£\n";
+  let msg = '\n===============================================\n';
+  msg += 'è¯·å…ˆé…ç½® MinerU Token\n';
+  msg += '===============================================\n';
+  if (reason) msg += reason + '\n\n';
+  msg += 'å½“å‰é»˜è®¤ä½¿ç”¨å…è´¹æ¥å£ï¼Œé€‚åˆè½¬æ¢æ™®é€šæ–‡ä»¶ã€‚\n';
+  msg += 'å¦‚éœ€è½¬æ¢æ›´å¤§/æ›´é•¿çš„æ–‡æ¡£ï¼Œè¯·é…ç½®æ ‡å‡† API Tokenã€‚\n\n';
+  msg += 'é…ç½®æ–¹æ³•ï¼š\n';
+  msg += '1. è·å– Tokenï¼šhttps://mineru.net/apiManage/token\n\n';
+  msg += '2. å‘Šè¯‰ AIï¼š"æˆ‘çš„ MinerU Token æ˜¯ xxx"\n';
+  msg += '(AI ä¼šè‡ªåŠ¨å†™å…¥é…ç½®æ–‡ä»¶)\n';
+  return msg;
 }
 
 function buildExpiredTokenHelp(skillRoot, httpStatus) {
-  return "\n===============================================\n" +
-         "MinerU API Token ÎŞĞ§»òÒÑ¹ıÆÚ\n" +
-         "===============================================\n" +
-         "HTTP ×´Ì¬: " + httpStatus + "\n\n" +
-         "µ±Ç°°´×îĞÂ¹æÔò¼ÇÎª£ºToken ÓĞĞ§ÆÚ 3 ¸öÔÂ£¨Ô¼ 90 Ìì£©¡£\n\n" +
-         "½â¾ö·½·¨£º\n" +
-         "1. ·ÃÎÊÖØĞÂÉêÇë Token£º\n" +
-         "   https://mineru.net/apiManage/token\n\n" +
-         "2. ¸æËß AI£º\"ÎÒµÄ MinerU Token ¹ıÆÚÁË£¬ĞÂµÄ Token ÊÇ£ºxxx\"\n\n" +
-         "   »òÊÖ¶¯¸üĞÂ£º\n" +
-         "   nano " + skillRoot + "/config/.env\n";
+  let msg = '\n===============================================\n';
+  msg += 'MinerU API Token å·²è¿‡æœŸæˆ–æ— æ•ˆ\n';
+  msg += '===============================================\n';
+  msg += 'HTTP çŠ¶æ€: ' + httpStatus + '\n';
+  msg += 'å½“å‰æ¥å£å°†é™çº§ä¸ºå…è´¹æ¥å£\n';
+  msg += 'å¦‚éœ€ç»§ç»­ä½¿ç”¨ï¼Œè¯·æ›´æ–° Token\n';
+  return msg;
 }
 
 function getAllowedExts(mode) {
-  if (mode === "light") {
-    return ["pdf", "docx", "pptx", "png", "jpg", "jpeg", "jp2", "webp", "gif", "bmp", "xls", "xlsx"];
+  if (mode === 'light') {
+    return ['pdf', 'docx', 'pptx', 'png', 'jpg', 'jpeg', 'jp2', 'webp', 'gif', 'bmp', 'xls', 'xlsx'];
   }
-  return ["pdf", "doc", "docx", "ppt", "pptx", "png", "jpg", "jpeg"];
+  return ['pdf', 'doc', 'docx', 'ppt', 'pptx', 'png', 'jpg', 'jpeg'];
 }
 
-function tryGetLocalPdfPageCount(sh, filePath) {
-  try {
-    const mdlsOutput = sh(`/usr/bin/mdls -name kMDItemNumberOfPages -raw ${shellQuote(filePath)} 2>/dev/null || true`).trim();
-    const count = parseInteger(mdlsOutput, -1);
-    return count > 0 ? count : null;
-  } catch (error) {
-    return null;
-  }
-}
+function buildSourceInfo(source, mode, skillRoot) {
+  if (!source) throw new Error('æœªæä¾›æ–‡ä»¶è·¯å¾„æˆ– URL');
 
-function buildOutputInfo(sh, sourceType, sourceValue, baseNameNoExt) {
-  if (sourceType === "local_file") {
-    return {
-      outputDir: sh(`/usr/bin/dirname ${shellQuote(sourceValue)}`).trim(),
-      outputBaseName: baseNameNoExt
-    };
-  }
-  return {
-    outputDir: sh("pwd").trim(),
-    outputBaseName: sanitizeFileName(baseNameNoExt, "remote_document")
-  };
-}
-
-function buildSourceInfo(sh, source, mode, skillRoot) {
-  if (!source) {
-    throw new Error("Î´Ìá¹©ÎÄ¼şÂ·¾¶»ò URL");
-  }
+  // Normalize Windows paths mangled by bash (e.g. C:Usersfile.pdf -> C:/Users/file.pdf)
+  source = normalizeWindowsPath(source);
 
   if (isHttpUrl(source)) {
     const sourceUrl = String(source).trim();
     const fileName = deriveNameFromUrl(sourceUrl);
-    const dotIndex = fileName.lastIndexOf(".");
-    const ext = dotIndex > -1 ? fileName.substring(dotIndex + 1).toLowerCase() : "";
+    const dotIndex = fileName.lastIndexOf('.');
+    const ext = dotIndex > -1 ? fileName.substring(dotIndex + 1).toLowerCase() : '';
     const htmlLike = isHtmlLikeUrl(sourceUrl);
-    if (mode === "light" && htmlLike) {
-      throw new Error(buildTokenSetupHelp(skillRoot, "ÍøÒ³ URL ÌáÈ¡ĞèÒª±ê×¼ Token API£»ÃâµÇÂ¼ÇáÁ¿½Ó¿Ú½öÖ§³ÖÔ¶³ÌÎÄµµ URL£¬²»Ö§³Ö HTML¡£"));
+    if (mode === 'light' && htmlLike) {
+      throw new Error(buildTokenSetupHelp(skillRoot, 'ç½‘é¡µ URL æå–éœ€è¦æ ‡å‡† Token APIï¼Œå…è´¹æ¥å£ä¸æ”¯æŒè¿œç¨‹æ–‡æ¡£'));
     }
-    const baseNameNoExt = dotIndex > -1 ? fileName.substring(0, dotIndex) : fileName || "remote-document";
-    const output = buildOutputInfo(sh, htmlLike ? "remote_html_url" : "remote_doc_url", sourceUrl, baseNameNoExt);
+    const baseNameNoExt = dotIndex > -1 ? fileName.substring(0, dotIndex) : fileName || 'remote-document';
     return {
-      sourceType: htmlLike ? "remote_html_url" : "remote_doc_url",
+      sourceType: htmlLike ? 'remote_html_url' : 'remote_doc_url',
       sourceValue: sourceUrl,
-      fileName: sanitizeFileName(fileName || baseNameNoExt, htmlLike ? "web_page.html" : "remote_document"),
-      baseNameNoExt: output.outputBaseName,
-      ext: ext,
-      outputDir: output.outputDir,
+      fileName: sanitizeFileName(fileName || baseNameNoExt, htmlLike ? 'web_page.html' : 'remote_document'),
+      baseNameNoExt,
+      ext,
+      outputDir: process.cwd(),
       sizeBytes: null,
       pageCount: null
     };
   }
 
   const filePath = source;
-  const fileExists = sh(`/bin/test -f ${shellQuote(filePath)} && echo 1 || echo 0`).trim();
-  if (fileExists !== "1") {
-    throw new Error(`ÎÄ¼ş²»´æÔÚ: ${filePath}`);
+  if (!fs.existsSync(filePath)) {
+    throw new Error('æ–‡ä»¶ä¸å­˜åœ¨: ' + filePath);
   }
 
-  const fileName = sh(`/usr/bin/basename ${shellQuote(filePath)}`).trim();
-  const dotIndex = fileName.lastIndexOf(".");
-  const ext = dotIndex > -1 ? fileName.substring(dotIndex + 1).toLowerCase() : "";
+  const fileName = path.basename(filePath);
+  const dotIndex = fileName.lastIndexOf('.');
+  const ext = dotIndex > -1 ? fileName.substring(dotIndex + 1).toLowerCase() : '';
   const allowedExts = getAllowedExts(mode);
 
   if (allowedExts.indexOf(ext) === -1) {
     throw new Error(
-      `µ±Ç°${mode === "light" ? "ÃâµÇÂ¼ÇáÁ¿½Ó¿Ú" : "±ê×¼ Token API"}²»Ö§³Ö¸ÃÎÄ¼şÀàĞÍ: ${ext || "unknown"}¡£\n` +
-      `Ö§³Ö¸ñÊ½: ${allowedExts.join(", ")}`
+      'å½“å‰' + (mode === 'light' ? 'å…è´¹æ¥å£' : 'æ ‡å‡† Token API') + 'ä¸æ”¯æŒè¯¥æ–‡ä»¶ç±»å‹: ' + (ext || 'unknown') + '\n' +
+      'æ”¯æŒæ ¼å¼: ' + allowedExts.join(', ')
     );
   }
 
-  const sizeBytes = parseInteger(sh(`/usr/bin/stat -f%z ${shellQuote(filePath)}`), 0);
-  const pageCount = ext === "pdf" ? tryGetLocalPdfPageCount(sh, filePath) : null;
-  if (mode === "light" && sizeBytes > 10 * 1024 * 1024) {
-    throw new Error(buildTokenSetupHelp(
-      skillRoot,
-      `µ±Ç°ÎÄ¼ş´óĞ¡Ô¼ ${(sizeBytes / 1024 / 1024).toFixed(2)} MB£¬ÒÑ³¬¹ıÃâµÇÂ¼ÇáÁ¿½Ó¿Ú 10 MB ÏŞÖÆ¡£`
-    ));
+  const sizeBytes = getFileSize(filePath);
+  const pageCount = (ext === 'pdf') ? getPdfPageCount(filePath) : null;
+  if (mode === 'light' && sizeBytes > 10 * 1024 * 1024) {
+    throw new Error(buildTokenSetupHelp(skillRoot, 'å½“å‰æ–‡ä»¶å¤§å°çº¦ ' + (sizeBytes / 1024 / 1024).toFixed(2) + ' MBï¼Œå·²è¶…è¿‡å…è´¹æ¥å£ 10 MB é™åˆ¶'));
   }
-  if (mode === "light" && pageCount && pageCount > 20) {
-    throw new Error(buildTokenSetupHelp(
-      skillRoot,
-      `µ±Ç° PDF ¹² ${pageCount} Ò³£¬ÒÑ³¬¹ıÃâµÇÂ¼ÇáÁ¿½Ó¿Ú 20 Ò³ÏŞÖÆ¡£`
-    ));
+  if (mode === 'light' && pageCount && pageCount > 20) {
+    throw new Error(buildTokenSetupHelp(skillRoot, 'å½“å‰ PDF å…± ' + pageCount + ' é¡µï¼Œå·²è¶…è¿‡å…è´¹æ¥å£ 20 é¡µé™åˆ¶'));
   }
 
   const baseNameNoExt = dotIndex > -1 ? fileName.substring(0, dotIndex) : fileName;
-  const output = buildOutputInfo(sh, "local_file", filePath, baseNameNoExt);
+  const outputDir = path.dirname(path.resolve(filePath));
 
   return {
-    sourceType: "local_file",
+    sourceType: 'local_file',
     sourceValue: filePath,
-    fileName: fileName,
-    baseNameNoExt: output.outputBaseName,
-    ext: ext,
-    outputDir: output.outputDir,
-    sizeBytes: sizeBytes,
-    pageCount: pageCount
+    fileName,
+    baseNameNoExt,
+    ext,
+    outputDir,
+    sizeBytes,
+    pageCount
   };
 }
 
@@ -409,69 +448,77 @@ function collectRemoteImageUrls(markdownContent) {
 }
 
 function safeAssetName(url, index) {
-  const cleanUrl = url.split("?")[0].split("#")[0];
-  const parts = cleanUrl.split("/");
-  let fileName = parts[parts.length - 1] || ("image_" + zeroPad(index + 1) + ".bin");
-  fileName = fileName.replace(/[^A-Za-z0-9._-]+/g, "_");
-  if (!fileName) {
-    fileName = "image_" + zeroPad(index + 1) + ".bin";
-  }
-  return zeroPad(index + 1) + "_" + fileName;
+  const cleanUrl = url.split('?')[0].split('#')[0];
+  const parts = cleanUrl.split('/');
+  let fileName = parts[parts.length - 1] || ('image_' + zeroPad(index + 1) + '.bin');
+  fileName = fileName.replace(/[^A-Za-z0-9._-]+/g, '_');
+  if (!fileName) fileName = 'image_' + zeroPad(index + 1) + '.bin';
+  return zeroPad(index + 1) + '_' + fileName;
 }
 
-function downloadRemoteImages(sh, archiveSubDir, markdownContent) {
+function downloadRemoteImages(archiveSubDir, markdownContent) {
   const urls = collectRemoteImageUrls(markdownContent);
   const manifest = [];
-  if (!urls.length) {
-    return manifest;
-  }
+  if (!urls.length) return manifest;
 
-  const imageDir = `${archiveSubDir}/images`;
-  sh(`/bin/mkdir -p ${shellQuote(imageDir)}`);
+  const imageDir = path.join(archiveSubDir, 'images');
+  mkdirp(imageDir);
 
   for (let i = 0; i < urls.length; i++) {
     const url = urls[i];
     const assetName = safeAssetName(url, i);
-    const outPath = `${imageDir}/${assetName}`;
-    const http = sh(`/usr/bin/curl -s -L ${shellQuote(url)} -w '%{http_code}' -o ${shellQuote(outPath)}`).trim();
-    manifest.push({
-      url: url,
-      archive_path: `images/${assetName}`,
-      downloaded: http === "200",
-      http_code: http
-    });
+    const outPath = path.join(imageDir, assetName);
+    try {
+      const httpCode = downloadFile(url, outPath);
+      manifest.push({ url, archive_path: 'images/' + assetName, downloaded: true, http_code: 200 });
+    } catch (e) {
+      manifest.push({ url, archive_path: 'images/' + assetName, downloaded: false, http_code: 0 });
+    }
   }
-
   return manifest;
 }
 
-function finalizeResult(sh, skillRoot, workDir, info, mdFile, extraMeta, log) {
-  const outputMdPath = `${info.outputDir}/${info.baseNameNoExt}.md`;
-  sh(`/bin/cp ${shellQuote(mdFile)} ${shellQuote(outputMdPath)}`);
-  log(`ÒÑ±£´æ Markdown: ${outputMdPath}`, 2);
+function finalizeResult(workDir, skillRoot, info, mdFile, extraMeta, log) {
+  const outputMdPath = path.join(info.outputDir, info.baseNameNoExt + '.md');
+  fs.copyFileSync(mdFile, outputMdPath);
+  log('å·²ä¿å­˜ Markdown: ' + outputMdPath, 2);
 
   const archiveSubDir = buildArchiveSubDir(skillRoot, info.baseNameNoExt);
-  sh(`/bin/mkdir -p ${shellQuote(archiveSubDir)}`);
-  sh(`/bin/cp -R ${shellQuote(workDir)}/. ${shellQuote(archiveSubDir)}/`);
+  mkdirp(archiveSubDir);
 
-  // ÇåÀíÒÑ½âÑ¹µÄ zip¡¢ÊäÈëÎÄ¼ş¸±±¾ºÍ API ·µ»ØµÄÔ­Ê¼ÎÄ¼şÒÔ½ÚÊ¡¿Õ¼ä
-  sh(`/bin/rm -f ${shellQuote(archiveSubDir + "/result.zip")}`);
-  sh(`/bin/rm -f ${shellQuote(archiveSubDir + "/input." + info.ext)}`);
-  sh(`/usr/bin/find ${shellQuote(archiveSubDir)} -maxdepth 1 -name '*_origin.*' -delete`);
-
-  const archivedMdPath = `${archiveSubDir}/full.md`;
-  const mdExists = sh(`/bin/test -f ${shellQuote(archivedMdPath)} && echo 1 || echo 0`).trim() === "1";
-  let imageManifest = [];
-  if (mdExists) {
-    const archivedMdContent = sh(`/bin/cat ${shellQuote(archivedMdPath)}`);
-    imageManifest = downloadRemoteImages(sh, archiveSubDir, archivedMdContent);
+  // Copy all files from workDir to archive
+  const workItems = fs.readdirSync(workDir);
+  for (const item of workItems) {
+    const src = path.join(workDir, item);
+    const dest = path.join(archiveSubDir, item);
+    if (item === 'result.zip') continue;
+    if (item.startsWith('input.')) continue;
+    if (item.endsWith('_origin')) continue;
+    try {
+      const stat = fs.statSync(src);
+      if (stat.isDirectory()) {
+        fs.mkdirSync(dest, { recursive: true });
+        fs.cpSync(src, dest, { recursive: true });
+      } else {
+        fs.copyFileSync(src, dest);
+      }
+    } catch (e) {}
   }
 
-  // ½« full.md ¸ÄÃûÎªÓëÊä³öÎÄ¼şÒ»ÖÂµÄÃû³Æ
-  const archivedMdNewPath = `${archiveSubDir}/${info.baseNameNoExt}.md`;
-  sh(`/bin/mv ${shellQuote(archivedMdPath)} ${shellQuote(archivedMdNewPath)}`);
+  const archivedMdPath = path.join(archiveSubDir, 'full.md');
+  const mdExists = fs.existsSync(archivedMdPath);
+  let imageManifest = [];
+  if (mdExists) {
+    const archivedMdContent = readTextFile(archivedMdPath);
+    imageManifest = downloadRemoteImages(archiveSubDir, archivedMdContent);
+  }
 
-  writeJsonFile(sh, `${archiveSubDir}/conversion_meta.json`, {
+  const archivedMdNewPath = path.join(archiveSubDir, info.baseNameNoExt + '.md');
+  if (fs.existsSync(archivedMdPath) && archivedMdPath !== archivedMdNewPath) {
+    fs.renameSync(archivedMdPath, archivedMdNewPath);
+  }
+
+  writeJsonFile(path.join(archiveSubDir, 'conversion_meta.json'), {
     mode: extraMeta.mode,
     source_file: extraMeta.sourceFile,
     output_markdown: outputMdPath,
@@ -480,28 +527,30 @@ function finalizeResult(sh, skillRoot, workDir, info, mdFile, extraMeta, log) {
     images: imageManifest
   });
 
-  log(`ÒÑ¹éµµµ½: ${archiveSubDir}`, 2);
+  log('å·²å½’æ¡£: ' + archiveSubDir, 2);
 
   return {
     success: true,
     outputPath: outputMdPath,
     archivePath: archiveSubDir,
     mode: extraMeta.mode,
-    message: `³É¹¦×ª»» ${info.fileName} -> ${info.baseNameNoExt}.md£¨${extraMeta.mode === "token" ? "±ê×¼ Token API" : "ÃâµÇÂ¼ÇáÁ¿½Ó¿Ú"}£©` +
-      (extraMeta.mode === "light" ? "¡£ÌáÊ¾£ºÇáÁ¿Ä£Ê½ÊÊºÏ¿ìËÙÊ¹ÓÃ£¬ÈôÓöµ½Ò³Êı/Ìå»ı/IP ÏŞÆµ£¬ÇëÅäÖÃ Token¡£" : "")
+    message: 'æˆåŠŸè½¬æ¢ ' + info.fileName + ' -> ' + info.baseNameNoExt + '.md' +
+      (extraMeta.mode === 'token' ? 'ï¼ˆæ ‡å‡† Token APIï¼‰' : 'ï¼ˆå…è´¹æ¥å£ï¼‰') +
+      (extraMeta.mode === 'light' ? 'ï¼ˆå½“å‰ä¸ºå…è´¹æ¥å£ï¼Œå¦‚éœ€æ›´å¤§æ–‡ä»¶/æ›´é•¿æ–‡æ¡£è¯·é…ç½® Tokenï¼‰' : '')
   };
 }
 
-function convertLocalFileWithTokenApi(sh, skillRoot, filePath, info, options, log) {
-  const API_BASE = sanitizeConfigValue(options.apiBase) || "https://mineru.net/api/v4";
+// ============ Token API conversion ============
+async function convertLocalFileWithTokenApi(filePath, info, options, log) {
+  const API_BASE = options.apiBase || 'https://mineru.net/api/v4';
   const API_TOKEN = options.apiToken;
-  const workDir = sh("/usr/bin/mktemp -d -t mineru_").trim();
-  const inputFile = `${workDir}/input.${info.ext}`;
+  const workDir = mkTempDir('mineru_token');
+  const inputFile = path.join(workDir, 'input.' + info.ext);
 
   try {
-    sh(`/bin/cp ${shellQuote(filePath)} ${shellQuote(inputFile)}`);
+    copyFile(filePath, inputFile);
 
-    const dataId = `convert_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+    const dataId = 'convert_' + Date.now() + '_' + Math.random().toString(36).substring(2, 11);
     const fileItem = {
       name: info.fileName,
       is_ocr: !!options.enableOcr,
@@ -518,134 +567,160 @@ function convertLocalFileWithTokenApi(sh, skillRoot, filePath, info, options, lo
       files: [fileItem]
     };
 
-    const resp1Path = `${workDir}/upload_ticket.json`;
-    const http1 = sh(`/usr/bin/curl -s -X POST ${shellQuote(API_BASE + "/file-urls/batch")} ` +
-                     `-H ${shellQuote("Authorization: Bearer " + API_TOKEN)} ` +
-                     `-H 'Content-Type: application/json' ` +
-                     `--data-raw ${shellQuote(JSON.stringify(req1))} ` +
-                     `-w '%{http_code}' -o ${shellQuote(resp1Path)}`).trim();
+    const rawBody = JSON.stringify(req1);
+    log('Token API request body: ' + rawBody, 2);
+    log('Token API token prefix: ' + (API_TOKEN ? API_TOKEN.substring(0, 20) : 'EMPTY'), 2);
+    log('Token API body bytes: ' + Buffer.byteLength(rawBody), 2);
 
-    if (http1 !== "200" && http1 !== "201") {
-      const resp1 = sh(`/bin/cat ${shellQuote(resp1Path)} 2>/dev/null || echo ""`);
-      if (http1 === "401" || http1 === "403" || resp1.indexOf("Unauthorized") > -1 || resp1.indexOf("invalid") > -1) {
-        throw new Error(buildExpiredTokenHelp(skillRoot, http1));
+    const resp1 = await httpRequest(API_BASE + '/file-urls/batch', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + API_TOKEN,
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(rawBody)
+      },
+      body: rawBody
+    });
+
+    log('Token API response: ' + resp1.body.substring(0, 500), 2);
+
+    // Debug OSS headers
+    const rawTicket = JSON.parse(resp1.body);
+    log('OSS headers from API: ' + JSON.stringify(rawTicket.headers || rawTicket.data && rawTicket.data.headers || []).substring(0, 300), 2);
+
+    if (resp1.status !== 200 && resp1.status !== 201) {
+      if (resp1.status === 401 || resp1.status === 403 || resp1.body.indexOf('Unauthorized') > -1) {
+        throw new Error(buildExpiredTokenHelp('', resp1.status));
       }
-      throw new Error(`ÉêÇëÉÏ´«µØÖ·Ê§°Ü (HTTP ${http1}): ${resp1}`);
+      throw new Error('æ–‡ä»¶ä¸Šä¼ åœ°å€è·å–å¤±è´¥ (HTTP ' + resp1.status + '): ' + resp1.body);
     }
 
-    const uploadTicket = JSON.parse(sh(`/bin/cat ${shellQuote(resp1Path)}`));
-    const batchId = uploadTicket.batch_id || (uploadTicket.data && uploadTicket.data.batch_id) || "";
+    let uploadTicket;
+    try {
+      uploadTicket = JSON.parse(resp1.body);
+    } catch (e) {
+      throw new Error('è§£æä¸Šä¼ å“åº”å¤±è´¥: ' + resp1.body);
+    }
+
+    const batchId = uploadTicket.batch_id || (uploadTicket.data && uploadTicket.data.batch_id) || '';
     const fileUrls = uploadTicket.file_urls || (uploadTicket.data && uploadTicket.data.file_urls) || [];
     const ossHeaders = uploadTicket.headers || (uploadTicket.data && uploadTicket.data.headers) || [];
-    const uploadURLRaw = Array.isArray(fileUrls) && fileUrls.length > 0 ? fileUrls[0] : "";
+    let uploadURLRaw = Array.isArray(fileUrls) && fileUrls.length > 0 ? fileUrls[0] : '';
 
     if (!batchId || !uploadURLRaw) {
-      throw new Error(`API ÏìÓ¦È±ÉÙ batch_id »ò file_urls: ${JSON.stringify(uploadTicket)}`);
+      throw new Error('API å“åº”ç¼ºå°‘ batch_id æˆ– file_urls: ' + resp1.body);
     }
 
     let uploadURL = uploadURLRaw;
-    try {
-      uploadURL = JSON.parse(uploadURLRaw);
-    } catch (error) {
-      uploadURL = uploadURLRaw;
-    }
-    uploadURL = String(uploadURL).replace(/[\n\r\t]+/g, " ");
+    try { uploadURL = JSON.parse(uploadURLRaw); } catch (e) { uploadURL = uploadURLRaw; }
+    uploadURL = String(uploadURL).replace(/[\n\r\t]+/g, ' ');
 
-    let headerFlags = "";
-    if (Array.isArray(ossHeaders)) {
-      const parts = [];
-      for (let i = 0; i < ossHeaders.length; i++) {
-        const header = ossHeaders[i];
-        const key = Object.keys(header)[0];
-        const value = header[key];
-        if (key && typeof value !== "undefined") {
-          parts.push(`-H ${shellQuote(key + ": " + value)}`);
-        }
-      }
-      headerFlags = parts.join(" ");
-    }
+    log('å¼€å§‹ä¸Šä¼ æ–‡ä»¶åˆ°æ ‡å‡† Token API...', 2);
+    log('Upload URL: ' + uploadURL.substring(0, 200), 2);
+    const fileContent = fs.readFileSync(inputFile);
+    log('File size: ' + fileContent.length + ' bytes', 2);
 
-    const uploadHttp = sh(`/usr/bin/curl -s -X PUT ${headerFlags} -T ${shellQuote(inputFile)} ${shellQuote(uploadURL)} -w '%{http_code}'`).trim();
-    if (uploadHttp !== "200" && uploadHttp !== "201") {
-      throw new Error(`ÎÄ¼şÉÏ´«Ê§°Ü (HTTP ${uploadHttp})`);
+    const uploadResp = await httpRequest(uploadURL, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/octet-stream',
+        'Content-Length': fileContent.length
+      },
+      body: fileContent
+    });
+
+    log('Upload response status: ' + uploadResp.status, 2);
+    log('Upload response body: ' + (uploadResp.body || '').substring(0, 300), 2);
+
+    if (uploadResp.status !== 200 && uploadResp.status !== 201) {
+      throw new Error('æ–‡ä»¶ä¸Šä¼ å¤±è´¥ (HTTP ' + uploadResp.status + ')');
     }
 
-    log("ÒÑÉÏ´«µ½±ê×¼ Token API£¬¿ªÊ¼ÂÖÑ¯½á¹û...", 2);
+    log('æ–‡ä»¶å·²ä¸Šä¼ ï¼Œå¼€å§‹æŸ¥è¯¢ç»“æœ...', 2);
 
-    const pollURL = `${API_BASE}/extract-results/batch/${batchId}`;
-    const pollRespPath = `${workDir}/token_poll.json`;
+    const pollURL = API_BASE + '/extract-results/batch/' + batchId;
     let pollCount = 0;
-    let resultUrl = "";
+    let resultUrl = '';
 
     while (pollCount < options.pollMax && !resultUrl) {
-      sh(`/bin/sleep ${options.pollSleep}`);
-      pollCount += 1;
-      sh(`/usr/bin/curl -s ${shellQuote(pollURL)} -H ${shellQuote("Authorization: Bearer " + API_TOKEN)} -o ${shellQuote(pollRespPath)}`);
+      await new Promise(r => setTimeout(r, options.pollSleep * 1000));
+      pollCount++;
 
-      const pollResponse = JSON.parse(sh(`/bin/cat ${shellQuote(pollRespPath)}`));
+      const pollResp = await httpRequest(pollURL, {
+        headers: { 'Authorization': 'Bearer ' + API_TOKEN }
+      });
+
+      if (pollResp.status === 401 || pollResp.status === 403) {
+        throw new Error(buildExpiredTokenHelp('', pollResp.status));
+      }
+
+      let pollResponse;
+      try {
+        pollResponse = JSON.parse(pollResp.body);
+      } catch (e) {
+        if (pollCount >= options.pollMax) break;
+        continue;
+      }
+
       const resultList = (pollResponse.data && pollResponse.data.extract_result) || [];
       if (Array.isArray(resultList) && resultList.length > 0) {
-        let doneItem = null;
-        let failedItem = null;
-        for (let i = 0; i < resultList.length; i++) {
-          const item = resultList[i];
-          if (item && item.state === "done" && item.full_zip_url) {
-            doneItem = item;
+        for (const item of resultList) {
+          if (item && item.state === 'done' && item.full_zip_url) {
+            resultUrl = item.full_zip_url;
             break;
           }
-          if (item && item.state === "failed") {
-            failedItem = item;
+          if (item && item.state === 'failed') {
+            throw new Error('MinerU æœåŠ¡å¤±è´¥: ' + (item.err_msg || 'æœªçŸ¥é”™è¯¯'));
           }
         }
-
-        if (doneItem) {
-          resultUrl = doneItem.full_zip_url;
-          break;
-        }
-        if (failedItem) {
-          throw new Error(`MinerU ´¦ÀíÊ§°Ü: ${failedItem.err_msg || "Î´Öª´íÎó"}`);
-        }
+        if (resultUrl) break;
         if (pollCount % 10 === 0) {
-          log(`±ê×¼ Token API ´¦ÀíÖĞ (${pollCount}/${options.pollMax})`, 2);
+          log('æ ‡å‡† Token API è½¬æ¢ä¸­... (' + pollCount + '/' + options.pollMax + ')', 2);
         }
       }
     }
 
     if (!resultUrl) {
-      throw new Error(`´¦Àí³¬Ê±£¬ÒÑ³¢ÊÔ ${pollCount} ´Î`);
+      throw new Error('è½¬æ¢è¶…æ—¶ï¼Œå·²å°è¯• ' + pollCount + ' æ¬¡');
     }
 
-    const resultFile = `${workDir}/result.zip`;
-    sh(`/usr/bin/curl -s -L -o ${shellQuote(resultFile)} ${shellQuote(resultUrl)}`);
-    sh(`cd ${shellQuote(workDir)} && /usr/bin/unzip -q result.zip`);
+    const resultFile = path.join(workDir, 'result.zip');
+    await downloadFile(resultUrl, resultFile);
 
-    let discoveredMdFile = sh(`/usr/bin/find ${shellQuote(workDir)} -name "*.md" -type f | /usr/bin/head -1`).trim();
+    // Unzip
+    const extractDir = path.join(workDir, 'extracted');
+    mkdirp(extractDir);
+    try {
+      execSync(`powershell -Command "Expand-Archive -Path '${resultFile}' -DestinationPath '${extractDir}' -Force"`, { encoding: 'utf8', shell: true });
+    } catch (e) {
+      // Fallback: copy zip and let user handle
+      throw new Error('è§£å‹å¤±è´¥ï¼Œè¯·ç¡®è®¤ PowerShell å¯ç”¨');
+    }
+
+    let discoveredMdFile = findFiles(extractDir, /\.md$/)[0] || '';
     if (!discoveredMdFile) {
-      throw new Error("Î´ÕÒµ½ Markdown ÎÄ¼ş");
-    }
-    const mdFile = `${workDir}/full.md`;
-    if (discoveredMdFile !== mdFile) {
-      sh(`/bin/cp ${shellQuote(discoveredMdFile)} ${shellQuote(mdFile)}`);
+      throw new Error('æœªæ‰¾åˆ° Markdown æ–‡ä»¶');
     }
 
-    return finalizeResult(sh, skillRoot, workDir, info, mdFile, {
-      mode: "token",
+    const mdFile = path.join(workDir, 'full.md');
+    if (discoveredMdFile !== mdFile) {
+      fs.copyFileSync(discoveredMdFile, mdFile);
+    }
+
+    return finalizeResult(workDir, '', info, mdFile, {
+      mode: 'token',
       sourceFile: filePath,
-      detail: {
-        api_base: API_BASE,
-        batch_id: batchId,
-        result_zip_url: resultUrl
-      }
+      detail: { api_base: API_BASE, batch_id: batchId, result_zip_url: resultUrl }
     }, log);
   } finally {
-    sh(`/bin/rm -rf ${shellQuote(workDir)}`);
+    rmrf(workDir);
   }
 }
 
-function convertRemoteUrlWithTokenApi(sh, skillRoot, sourceUrl, info, options, log) {
-  const API_BASE = sanitizeConfigValue(options.apiBase) || "https://mineru.net/api/v4";
+async function convertRemoteUrlWithTokenApi(sourceUrl, info, options, log) {
+  const API_BASE = options.apiBase || 'https://mineru.net/api/v4';
   const API_TOKEN = options.apiToken;
-  const workDir = sh("/usr/bin/mktemp -d -t mineru_url_").trim();
+  const workDir = mkTempDir('mineru_url_token');
 
   try {
     const requestBody = {
@@ -656,112 +731,114 @@ function convertRemoteUrlWithTokenApi(sh, skillRoot, sourceUrl, info, options, l
       enable_formula: !!options.enableFormula,
       model_version: options.modelVersion
     };
-    if (options.pageRanges && info.sourceType !== "remote_html_url") {
-      requestBody.page_ranges = options.pageRanges;
+
+    log('æäº¤è¿œç¨‹ URL åˆ°æ ‡å‡† Token API...', 2);
+
+    const createResp = await httpRequest(API_BASE + '/extract/task', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + API_TOKEN,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(requestBody)
+    });
+
+    if (createResp.status === 401 || createResp.status === 403) {
+      throw new Error(buildExpiredTokenHelp('', createResp.status));
+    }
+    if (createResp.status !== 200 && createResp.status !== 201) {
+      throw new Error('æäº¤è¿œç¨‹ URL ä»»åŠ¡å¤±è´¥ (HTTP ' + createResp.status + '): ' + createResp.body);
     }
 
-    const createRespPath = `${workDir}/token_url_create.json`;
-    const createHttp = sh(`/usr/bin/curl -s -X POST ${shellQuote(API_BASE + "/extract/task")} ` +
-                          `-H ${shellQuote("Authorization: Bearer " + API_TOKEN)} ` +
-                          `-H 'Content-Type: application/json' ` +
-                          `--data-raw ${shellQuote(JSON.stringify(requestBody))} ` +
-                          `-w '%{http_code}' -o ${shellQuote(createRespPath)}`).trim();
-    const createBody = sh(`/bin/cat ${shellQuote(createRespPath)} 2>/dev/null || echo ""`);
-    if (createHttp === "401" || createHttp === "403") {
-      throw new Error(buildExpiredTokenHelp(skillRoot, createHttp));
-    }
-    if (createHttp !== "200" && createHttp !== "201") {
-      throw new Error(`´´½¨Ô¶³Ì URL ½âÎöÈÎÎñÊ§°Ü (HTTP ${createHttp}): ${createBody}`);
+    let createData;
+    try {
+      createData = JSON.parse(createResp.body);
+    } catch (e) {
+      throw new Error('è§£æä»»åŠ¡å“åº”å¤±è´¥: ' + createResp.body);
     }
 
-    const createResp = JSON.parse(createBody);
-    if (createResp.code !== 0 || !createResp.data || !createResp.data.task_id) {
-      throw new Error(`´´½¨Ô¶³Ì URL ½âÎöÈÎÎñÊ§°Ü: ${createResp.msg || createBody}`);
+    if (createData.code !== 0 || !createData.data || !createData.data.task_id) {
+      throw new Error('æäº¤è¿œç¨‹ URL ä»»åŠ¡å¤±è´¥: ' + (createData.msg || createResp.body));
     }
 
-    log("ÒÑÌá½»µ½±ê×¼ Token API£¨URL Ä£Ê½£©£¬¿ªÊ¼ÂÖÑ¯½á¹û...", 2);
-    const pollRespPath = `${workDir}/token_url_poll.json`;
+    log('URL æ¨¡å¼ä»»åŠ¡å·²æäº¤ï¼Œå¼€å§‹æŸ¥è¯¢...', 2);
     let pollCount = 0;
-    let resultUrl = "";
+    let resultUrl = '';
 
     while (pollCount < options.pollMax && !resultUrl) {
-      sh(`/bin/sleep ${options.pollSleep}`);
-      pollCount += 1;
-      const pollHttp = sh(`/usr/bin/curl -s ${shellQuote(API_BASE + "/extract/task/" + createResp.data.task_id)} ` +
-                          `-H ${shellQuote("Authorization: Bearer " + API_TOKEN)} ` +
-                          `-w '%{http_code}' -o ${shellQuote(pollRespPath)}`).trim();
-      const pollBody = sh(`/bin/cat ${shellQuote(pollRespPath)} 2>/dev/null || echo ""`);
-      if (pollHttp === "401" || pollHttp === "403") {
-        throw new Error(buildExpiredTokenHelp(skillRoot, pollHttp));
-      }
-      if (pollHttp !== "200" && pollHttp !== "201") {
-        throw new Error(`²éÑ¯Ô¶³Ì URL ÈÎÎñÊ§°Ü (HTTP ${pollHttp}): ${pollBody}`);
+      await new Promise(r => setTimeout(r, options.pollSleep * 1000));
+      pollCount++;
+
+      const pollResp = await httpRequest(API_BASE + '/extract/task/' + createData.data.task_id, {
+        headers: { 'Authorization': 'Bearer ' + API_TOKEN }
+      });
+
+      if (pollResp.status === 401 || pollResp.status === 403) {
+        throw new Error(buildExpiredTokenHelp('', pollResp.status));
       }
 
-      const pollResp = JSON.parse(pollBody);
-      const data = pollResp.data || {};
-      if (data.state === "done" && data.full_zip_url) {
+      let pollData;
+      try {
+        pollData = JSON.parse(pollResp.body);
+      } catch (e) {
+        if (pollCount >= options.pollMax) break;
+        continue;
+      }
+
+      const data = pollData.data || {};
+      if (data.state === 'done' && data.full_zip_url) {
         resultUrl = data.full_zip_url;
         break;
       }
-      if (data.state === "failed") {
-        throw new Error(`MinerU ´¦ÀíÊ§°Ü: ${data.err_msg || "Î´Öª´íÎó"}`);
+      if (data.state === 'failed') {
+        throw new Error('MinerU æœåŠ¡å¤±è´¥: ' + (data.err_msg || 'æœªçŸ¥é”™è¯¯'));
       }
       if (pollCount % 10 === 0) {
-        log(`±ê×¼ Token API£¨URL Ä£Ê½£©´¦ÀíÖĞ (${pollCount}/${options.pollMax})`, 2);
+        log('æ ‡å‡† Token API URL æ¨¡å¼è½¬æ¢ä¸­... (' + pollCount + '/' + options.pollMax + ')', 2);
       }
     }
 
     if (!resultUrl) {
-      throw new Error(`´¦Àí³¬Ê±£¬ÒÑ³¢ÊÔ ${pollCount} ´Î`);
+      throw new Error('è½¬æ¢è¶…æ—¶ï¼Œå·²å°è¯• ' + pollCount + ' æ¬¡');
     }
 
-    const resultFile = `${workDir}/result.zip`;
-    sh(`/usr/bin/curl -s -L -o ${shellQuote(resultFile)} ${shellQuote(resultUrl)}`);
-    sh(`cd ${shellQuote(workDir)} && /usr/bin/unzip -q result.zip`);
+    const resultFile = path.join(workDir, 'result.zip');
+    await downloadFile(resultUrl, resultFile);
 
-    const discoveredMdFile = sh(`/usr/bin/find ${shellQuote(workDir)} -name "*.md" -type f | /usr/bin/head -1`).trim();
+    const extractDir = path.join(workDir, 'extracted');
+    mkdirp(extractDir);
+    try {
+      execSync(`powershell -Command "Expand-Archive -Path '${resultFile}' -DestinationPath '${extractDir}' -Force"`, { encoding: 'utf8', shell: true });
+    } catch (e) {
+      throw new Error('è§£å‹å¤±è´¥');
+    }
+
+    let discoveredMdFile = findFiles(extractDir, /\.md$/)[0] || '';
     if (!discoveredMdFile) {
-      throw new Error("Î´ÕÒµ½ Markdown ÎÄ¼ş");
+      throw new Error('æœªæ‰¾åˆ° Markdown æ–‡ä»¶');
     }
-    const mdFile = `${workDir}/full.md`;
-    sh(`/bin/cp ${shellQuote(discoveredMdFile)} ${shellQuote(mdFile)}`);
 
-    return finalizeResult(sh, skillRoot, workDir, info, mdFile, {
-      mode: "token",
+    const mdFile = path.join(workDir, 'full.md');
+    fs.copyFileSync(discoveredMdFile, mdFile);
+
+    return finalizeResult(workDir, '', info, mdFile, {
+      mode: 'token',
       sourceFile: sourceUrl,
-      detail: {
-        api_base: API_BASE,
-        task_id: createResp.data.task_id,
-        result_zip_url: resultUrl,
-        source_type: info.sourceType
-      }
+      detail: { api_base: API_BASE, task_id: createData.data.task_id, result_zip_url: resultUrl, source_type: info.sourceType }
     }, log);
   } finally {
-    sh(`/bin/rm -rf ${shellQuote(workDir)}`);
+    rmrf(workDir);
   }
 }
 
-function normalizeLightFailure(skillRoot, httpStatus, rawBody, detail) {
-  const body = String(rawBody || "");
-  const reason = String(detail || body || "").toLowerCase();
-  if (httpStatus === "429" || reason.indexOf("429") > -1 || reason.indexOf("rate") > -1 || reason.indexOf("ÆµÂÊ") > -1) {
-    return buildTokenSetupHelp(skillRoot, "ÃâµÇÂ¼ÇáÁ¿½Ó¿Úµ±Ç°´¥·¢ IP ÏŞÆµ£¬ÇëÉÔºóÖØÊÔ»ò¸ÄÓÃ±ê×¼ Token API¡£");
-  }
-  if (reason.indexOf("10mb") > -1 || reason.indexOf("20 page") > -1 || reason.indexOf("20Ò³") > -1 ||
-      reason.indexOf("file too large") > -1 || reason.indexOf("page") > -1 || reason.indexOf("size") > -1) {
-    return buildTokenSetupHelp(skillRoot, "ÃâµÇÂ¼ÇáÁ¿½Ó¿ÚÃüÖĞÁËµ¥ÎÄ¼ş´óĞ¡»òÒ³ÊıÏŞÖÆ£¬ÇëÅäÖÃ Token ºóÖØÊÔ¡£");
-  }
-  return null;
-}
-
-function convertLocalFileWithLightApi(sh, skillRoot, filePath, info, options, log) {
-  const LIGHT_API_BASE = "https://mineru.net/api/v1/agent";
-  const workDir = sh("/usr/bin/mktemp -d -t mineru_light_").trim();
-  const inputFile = `${workDir}/input.${info.ext}`;
+// ============ Light API conversion (å…è´¹æ¥å£) ============
+async function convertLocalFileWithLightApi(filePath, info, options, log) {
+  const LIGHT_API_BASE = 'https://mineru.net/api/v1/agent';
+  const workDir = mkTempDir('mineru_light');
+  const inputFile = path.join(workDir, 'input.' + info.ext);
 
   try {
-    sh(`/bin/cp ${shellQuote(filePath)} ${shellQuote(inputFile)}`);
+    copyFile(filePath, inputFile);
 
     const submitReq = {
       file_name: info.fileName,
@@ -769,121 +846,115 @@ function convertLocalFileWithLightApi(sh, skillRoot, filePath, info, options, lo
       is_ocr: !!options.enableOcr
     };
 
-    const submitRespPath = `${workDir}/light_submit.json`;
-    const submitHttp = sh(`/usr/bin/curl -s -X POST ${shellQuote(LIGHT_API_BASE + "/parse/file")} ` +
-                          `-H 'Content-Type: application/json' ` +
-                          `--data-raw ${shellQuote(JSON.stringify(submitReq))} ` +
-                          `-w '%{http_code}' -o ${shellQuote(submitRespPath)}`).trim();
-    const submitBody = sh(`/bin/cat ${shellQuote(submitRespPath)} 2>/dev/null || echo ""`);
-    const submitHint = normalizeLightFailure(skillRoot, submitHttp, submitBody, "");
-    if (submitHint) {
-      throw new Error(submitHint);
-    }
-    if (submitHttp !== "200" && submitHttp !== "201") {
-      throw new Error(`ÃâµÇÂ¼ÇáÁ¿½Ó¿ÚÌá½»Ê§°Ü (HTTP ${submitHttp}): ${submitBody}`);
+    log('æäº¤æ–‡ä»¶åˆ°å…è´¹æ¥å£...', 2);
+
+    const submitResp = await httpRequest(LIGHT_API_BASE + '/parse/file', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(JSON.stringify(submitReq))
+      },
+      body: JSON.stringify(submitReq)
+    });
+
+    if (submitResp.status !== 200 && submitResp.status !== 201) {
+      throw new Error('å…è´¹æ¥å£æäº¤å¤±è´¥ (HTTP ' + submitResp.status + '): ' + submitResp.body);
     }
 
-    const submitResp = JSON.parse(submitBody);
-    if (submitResp.code !== 0 || !submitResp.data) {
-      const detail = submitResp.msg || submitResp.message || submitBody;
-      const normalized = normalizeLightFailure(skillRoot, submitHttp, submitBody, detail);
-      if (normalized) {
-        throw new Error(normalized);
-      }
-      throw new Error(`ÃâµÇÂ¼ÇáÁ¿½Ó¿ÚÌá½»Ê§°Ü: ${detail}`);
+    let submitData;
+    try {
+      submitData = JSON.parse(submitResp.body);
+    } catch (e) {
+      throw new Error('è§£ææäº¤å“åº”å¤±è´¥: ' + submitResp.body);
     }
 
-    const taskId = submitResp.data.task_id || "";
-    const uploadUrl = submitResp.data.file_url || "";
+    if (submitData.code !== 0 || !submitData.data) {
+      throw new Error('å…è´¹æ¥å£æäº¤å¤±è´¥: ' + (submitData.msg || submitData.message || submitResp.body));
+    }
+
+    const taskId = submitData.data.task_id || '';
+    const uploadUrl = submitData.data.file_url || '';
     if (!taskId || !uploadUrl) {
-      throw new Error(`ÃâµÇÂ¼ÇáÁ¿½Ó¿ÚÏìÓ¦È±ÉÙ task_id »ò file_url: ${submitBody}`);
+      throw new Error('å…è´¹æ¥å£å“åº”ç¼ºå°‘ task_id æˆ– file_url: ' + submitResp.body);
     }
 
-    const uploadHttp = sh(`/usr/bin/curl -s -X PUT -T ${shellQuote(inputFile)} ${shellQuote(uploadUrl)} -w '%{http_code}'`).trim();
-    if (uploadHttp !== "200" && uploadHttp !== "201") {
-      throw new Error(`ÃâµÇÂ¼ÇáÁ¿½Ó¿ÚÎÄ¼şÉÏ´«Ê§°Ü (HTTP ${uploadHttp})`);
+    log('ä¸Šä¼ æ–‡ä»¶åˆ°å…è´¹æ¥å£...', 2);
+
+    const uploadResp = await httpRequest(uploadUrl, {
+      method: 'PUT',
+      body: fs.readFileSync(inputFile)
+    });
+
+    if (uploadResp.status !== 200 && uploadResp.status !== 201) {
+      throw new Error('å…è´¹æ¥å£æ–‡ä»¶ä¸Šä¼ å¤±è´¥ (HTTP ' + uploadResp.status + ')');
     }
 
-    log("ÒÑÌá½»µ½ÃâµÇÂ¼ÇáÁ¿½Ó¿Ú£¬¿ªÊ¼ÂÖÑ¯½á¹û...", 2);
+    log('å…è´¹æ¥å£å¤„ç†ä¸­ï¼Œå¼€å§‹æŸ¥è¯¢...', 2);
 
-    const pollRespPath = `${workDir}/light_poll.json`;
     let pollCount = 0;
-    let markdownUrl = "";
-    let finalPollResponse = null;
+    let markdownUrl = '';
 
     while (pollCount < options.pollMax && !markdownUrl) {
-      sh(`/bin/sleep ${options.pollSleep}`);
-      pollCount += 1;
+      await new Promise(r => setTimeout(r, options.pollSleep * 1000));
+      pollCount++;
 
-      const pollHttp = sh(`/usr/bin/curl -s ${shellQuote(LIGHT_API_BASE + "/parse/" + taskId)} -w '%{http_code}' -o ${shellQuote(pollRespPath)}`).trim();
-      const pollBody = sh(`/bin/cat ${shellQuote(pollRespPath)} 2>/dev/null || echo ""`);
-      const pollHint = normalizeLightFailure(skillRoot, pollHttp, pollBody, "");
-      if (pollHint) {
-        throw new Error(pollHint);
-      }
-      if (pollHttp !== "200" && pollHttp !== "201") {
-        throw new Error(`ÃâµÇÂ¼ÇáÁ¿½Ó¿ÚÂÖÑ¯Ê§°Ü (HTTP ${pollHttp}): ${pollBody}`);
+      const pollResp = await httpRequest(LIGHT_API_BASE + '/parse/' + taskId, {
+        headers: { 'User-Agent': 'Mozilla/5.0' }
+      });
+
+      if (pollResp.status !== 200 && pollResp.status !== 201) {
+        throw new Error('å…è´¹æ¥å£æŸ¥è¯¢å¤±è´¥ (HTTP ' + pollResp.status + '): ' + pollResp.body);
       }
 
-      const pollResp = JSON.parse(pollBody);
-      finalPollResponse = pollResp;
-      if (pollResp.code !== 0 || !pollResp.data) {
-        const detail = pollResp.msg || pollResp.message || pollBody;
-        const normalized = normalizeLightFailure(skillRoot, pollHttp, pollBody, detail);
-        if (normalized) {
-          throw new Error(normalized);
-        }
-        throw new Error(`ÃâµÇÂ¼ÇáÁ¿½Ó¿ÚÂÖÑ¯Ê§°Ü: ${detail}`);
+      let pollRespData;
+      try {
+        pollRespData = JSON.parse(pollResp.body);
+      } catch (e) {
+        if (pollCount >= options.pollMax) break;
+        continue;
       }
 
-      const state = pollResp.data.state || "";
-      if (state === "done" && pollResp.data.markdown_url) {
-        markdownUrl = pollResp.data.markdown_url;
+      if (pollRespData.code !== 0 || !pollRespData.data) {
+        throw new Error('å…è´¹æ¥å£æŸ¥è¯¢å¤±è´¥: ' + (pollRespData.msg || pollRespData.message || pollResp.body));
+      }
+
+      const state = pollRespData.data.state || '';
+      if (state === 'done' && pollRespData.data.markdown_url) {
+        markdownUrl = pollRespData.data.markdown_url;
         break;
       }
-      if (state === "failed") {
-        const detail = pollResp.data.err_msg || pollResp.data.msg || pollBody;
-        const normalized = normalizeLightFailure(skillRoot, pollHttp, pollBody, detail);
-        if (normalized) {
-          throw new Error(normalized);
-        }
-        throw new Error(`ÃâµÇÂ¼ÇáÁ¿½Ó¿Ú´¦ÀíÊ§°Ü: ${detail}`);
+      if (state === 'failed') {
+        throw new Error('å…è´¹æ¥å£å¤„ç†å¤±è´¥: ' + (pollRespData.data.err_msg || pollRespData.data.msg || 'æœªçŸ¥é”™è¯¯'));
       }
       if (pollCount % 10 === 0) {
-        log(`ÃâµÇÂ¼ÇáÁ¿½Ó¿Ú´¦ÀíÖĞ (${pollCount}/${options.pollMax})`, 2);
+        log('å…è´¹æ¥å£å¤„ç†è¿›åº¦... (' + pollCount + '/' + options.pollMax + ')', 2);
       }
     }
 
     if (!markdownUrl) {
-      throw new Error(`ÃâµÇÂ¼ÇáÁ¿½Ó¿Ú´¦Àí³¬Ê±£¬ÒÑ³¢ÊÔ ${pollCount} ´Î`);
+      throw new Error('å…è´¹æ¥å£è¶…æ—¶ï¼Œå·²å°è¯• ' + pollCount + ' æ¬¡');
     }
 
-    const mdFile = `${workDir}/full.md`;
-    const mdHttp = sh(`/usr/bin/curl -s -L ${shellQuote(markdownUrl)} -w '%{http_code}' -o ${shellQuote(mdFile)}`).trim();
-    if (mdHttp !== "200" && mdHttp !== "201") {
-      throw new Error(`ÏÂÔØÃâµÇÂ¼ÇáÁ¿½Ó¿Ú Markdown Ê§°Ü (HTTP ${mdHttp})`);
+    const mdFile = path.join(workDir, 'full.md');
+    const mdResp = await httpRequest(markdownUrl, {});
+    if (mdResp.status !== 200 && mdResp.status !== 201) {
+      throw new Error('ä¸‹è½½ Markdown å¤±è´¥ (HTTP ' + mdResp.status + ')');
     }
+    writeTextFile(mdFile, mdResp.body);
 
-    if (finalPollResponse) {
-      writeJsonFile(sh, `${workDir}/light_result.json`, finalPollResponse);
-    }
-
-    return finalizeResult(sh, skillRoot, workDir, info, mdFile, {
-      mode: "light",
+    return finalizeResult(workDir, '', info, mdFile, {
+      mode: 'light',
       sourceFile: filePath,
-      detail: {
-        task_id: taskId,
-        markdown_url: markdownUrl
-      }
+      detail: { task_id: taskId, markdown_url: markdownUrl }
     }, log);
   } finally {
-    sh(`/bin/rm -rf ${shellQuote(workDir)}`);
+    rmrf(workDir);
   }
 }
 
-function convertRemoteUrlWithLightApi(sh, skillRoot, sourceUrl, info, options, log) {
-  const LIGHT_API_BASE = "https://mineru.net/api/v1/agent";
-  const workDir = sh("/usr/bin/mktemp -d -t mineru_light_url_").trim();
+async function convertRemoteUrlWithLightApi(sourceUrl, info, options, log) {
+  const LIGHT_API_BASE = 'https://mineru.net/api/v1/agent';
+  const workDir = mkTempDir('mineru_light_url');
 
   try {
     const submitReq = {
@@ -893,150 +964,140 @@ function convertRemoteUrlWithLightApi(sh, skillRoot, sourceUrl, info, options, l
       is_ocr: !!options.enableOcr
     };
 
-    const submitRespPath = `${workDir}/light_url_submit.json`;
-    const submitHttp = sh(`/usr/bin/curl -s -X POST ${shellQuote(LIGHT_API_BASE + "/parse/url")} ` +
-                          `-H 'Content-Type: application/json' ` +
-                          `--data-raw ${shellQuote(JSON.stringify(submitReq))} ` +
-                          `-w '%{http_code}' -o ${shellQuote(submitRespPath)}`).trim();
-    const submitBody = sh(`/bin/cat ${shellQuote(submitRespPath)} 2>/dev/null || echo ""`);
-    const submitHint = normalizeLightFailure(skillRoot, submitHttp, submitBody, "");
-    if (submitHint) {
-      throw new Error(submitHint);
-    }
-    if (submitHttp !== "200" && submitHttp !== "201") {
-      throw new Error(`ÃâµÇÂ¼ÇáÁ¿½Ó¿Ú URL Ìá½»Ê§°Ü (HTTP ${submitHttp}): ${submitBody}`);
+    log('æäº¤è¿œç¨‹ URL åˆ°å…è´¹æ¥å£...', 2);
+
+    const submitResp = await httpRequest(LIGHT_API_BASE + '/parse/url', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(submitReq)
+    });
+
+    if (submitResp.status !== 200 && submitResp.status !== 201) {
+      throw new Error('å…è´¹æ¥å£ URL æäº¤å¤±è´¥ (HTTP ' + submitResp.status + '): ' + submitResp.body);
     }
 
-    const submitResp = JSON.parse(submitBody);
-    if (submitResp.code !== 0 || !submitResp.data || !submitResp.data.task_id) {
-      throw new Error(`ÃâµÇÂ¼ÇáÁ¿½Ó¿Ú URL Ìá½»Ê§°Ü: ${submitResp.msg || submitBody}`);
+    let submitData;
+    try {
+      submitData = JSON.parse(submitResp.body);
+    } catch (e) {
+      throw new Error('è§£æ URL æäº¤å“åº”å¤±è´¥: ' + submitResp.body);
     }
 
-    log("ÒÑÌá½»Ô¶³ÌÎÄµµ URL µ½ÃâµÇÂ¼ÇáÁ¿½Ó¿Ú£¬¿ªÊ¼ÂÖÑ¯½á¹û...", 2);
-    const pollRespPath = `${workDir}/light_url_poll.json`;
+    if (submitData.code !== 0 || !submitData.data || !submitData.data.task_id) {
+      throw new Error('å…è´¹æ¥å£ URL æäº¤å¤±è´¥: ' + (submitData.msg || submitData.message || submitResp.body));
+    }
+
+    log('å…è´¹æ¥å£ URL ä»»åŠ¡å·²æäº¤ï¼Œå¼€å§‹æŸ¥è¯¢...', 2);
     let pollCount = 0;
-    let markdownUrl = "";
-    let finalPollResponse = null;
+    let markdownUrl = '';
 
     while (pollCount < options.pollMax && !markdownUrl) {
-      sh(`/bin/sleep ${options.pollSleep}`);
-      pollCount += 1;
-      const pollHttp = sh(`/usr/bin/curl -s ${shellQuote(LIGHT_API_BASE + "/parse/" + submitResp.data.task_id)} -w '%{http_code}' -o ${shellQuote(pollRespPath)}`).trim();
-      const pollBody = sh(`/bin/cat ${shellQuote(pollRespPath)} 2>/dev/null || echo ""`);
-      const pollHint = normalizeLightFailure(skillRoot, pollHttp, pollBody, "");
-      if (pollHint) {
-        throw new Error(pollHint);
-      }
-      if (pollHttp !== "200" && pollHttp !== "201") {
-        throw new Error(`ÃâµÇÂ¼ÇáÁ¿½Ó¿Ú URL ÂÖÑ¯Ê§°Ü (HTTP ${pollHttp}): ${pollBody}`);
+      await new Promise(r => setTimeout(r, options.pollSleep * 1000));
+      pollCount++;
+
+      const pollResp = await httpRequest(LIGHT_API_BASE + '/parse/' + submitData.data.task_id, {
+        headers: { 'User-Agent': 'Mozilla/5.0' }
+      });
+
+      if (pollResp.status !== 200 && pollResp.status !== 201) {
+        throw new Error('å…è´¹æ¥å£ URL æŸ¥è¯¢å¤±è´¥ (HTTP ' + pollResp.status + '): ' + pollResp.body);
       }
 
-      const pollResp = JSON.parse(pollBody);
-      finalPollResponse = pollResp;
-      if (pollResp.code !== 0 || !pollResp.data) {
-        throw new Error(`ÃâµÇÂ¼ÇáÁ¿½Ó¿Ú URL ÂÖÑ¯Ê§°Ü: ${pollResp.msg || pollBody}`);
+      let pollRespData;
+      try {
+        pollRespData = JSON.parse(pollResp.body);
+      } catch (e) {
+        if (pollCount >= options.pollMax) break;
+        continue;
       }
-      if (pollResp.data.state === "done" && pollResp.data.markdown_url) {
-        markdownUrl = pollResp.data.markdown_url;
+
+      if (pollRespData.code !== 0 || !pollRespData.data) {
+        throw new Error('å…è´¹æ¥å£ URL æŸ¥è¯¢å¤±è´¥: ' + (pollRespData.msg || pollRespData.message || pollResp.body));
+      }
+      if (pollRespData.data.state === 'done' && pollRespData.data.markdown_url) {
+        markdownUrl = pollRespData.data.markdown_url;
         break;
       }
-      if (pollResp.data.state === "failed") {
-        const normalized = normalizeLightFailure(skillRoot, pollHttp, pollBody, pollResp.data.err_msg || "");
-        if (normalized) {
-          throw new Error(normalized);
-        }
-        throw new Error(`ÃâµÇÂ¼ÇáÁ¿½Ó¿Ú URL ½âÎöÊ§°Ü: ${pollResp.data.err_msg || "Î´Öª´íÎó"}`);
+      if (pollRespData.data.state === 'failed') {
+        throw new Error('å…è´¹æ¥å£ URL å¤„ç†å¤±è´¥: ' + (pollRespData.data.err_msg || 'æœªçŸ¥é”™è¯¯'));
       }
       if (pollCount % 10 === 0) {
-        log(`ÃâµÇÂ¼ÇáÁ¿½Ó¿Ú URL ´¦ÀíÖĞ (${pollCount}/${options.pollMax})`, 2);
+        log('å…è´¹æ¥å£ URL å¤„ç†è¿›åº¦... (' + pollCount + '/' + options.pollMax + ')', 2);
       }
     }
 
     if (!markdownUrl) {
-      throw new Error(`ÃâµÇÂ¼ÇáÁ¿½Ó¿Ú URL ´¦Àí³¬Ê±£¬ÒÑ³¢ÊÔ ${pollCount} ´Î`);
+      throw new Error('å…è´¹æ¥å£ URL è¶…æ—¶ï¼Œå·²å°è¯• ' + pollCount + ' æ¬¡');
     }
 
-    const mdFile = `${workDir}/full.md`;
-    const mdHttp = sh(`/usr/bin/curl -s -L ${shellQuote(markdownUrl)} -w '%{http_code}' -o ${shellQuote(mdFile)}`).trim();
-    if (mdHttp !== "200" && mdHttp !== "201") {
-      throw new Error(`ÏÂÔØÃâµÇÂ¼ÇáÁ¿½Ó¿Ú URL Markdown Ê§°Ü (HTTP ${mdHttp})`);
+    const mdFile = path.join(workDir, 'full.md');
+    const mdResp = await httpRequest(markdownUrl, {});
+    if (mdResp.status !== 200 && mdResp.status !== 201) {
+      throw new Error('ä¸‹è½½ Markdown å¤±è´¥ (HTTP ' + mdResp.status + ')');
     }
-    if (finalPollResponse) {
-      writeJsonFile(sh, `${workDir}/light_url_result.json`, finalPollResponse);
-    }
+    writeTextFile(mdFile, mdResp.body);
 
-    return finalizeResult(sh, skillRoot, workDir, info, mdFile, {
-      mode: "light",
+    return finalizeResult(workDir, '', info, mdFile, {
+      mode: 'light',
       sourceFile: sourceUrl,
-      detail: {
-        task_id: submitResp.data.task_id,
-        markdown_url: markdownUrl,
-        source_type: info.sourceType
-      }
+      detail: { task_id: submitData.data.task_id, markdown_url: markdownUrl, source_type: info.sourceType }
     }, log);
   } finally {
-    sh(`/bin/rm -rf ${shellQuote(workDir)}`);
+    rmrf(workDir);
   }
 }
 
-function verifyToken(sh, skillRoot, config) {
-  const apiToken = resolveApiToken(sh, config);
+// ============ Token verify ============
+async function verifyToken(sh, skillRoot, config) {
+  const apiToken = resolveApiToken(config);
   if (!apiToken) {
-    return "µ±Ç°Î´ÅäÖÃ MinerU Token¡£Ä¬ÈÏÈÔ¿ÉÊ¹ÓÃÃâµÇÂ¼ÇáÁ¿½Ó¿Ú¡£";
+    return 'å½“å‰æœªé…ç½® MinerU Tokenï¼Œå°†ä½¿ç”¨å…è´¹æ¥å£ã€‚';
   }
 
-  const apiBase = sanitizeConfigValue(config.MINERU_API_BASE) || "https://mineru.net/api/v4";
-  const probeTaskId = "00000000-0000-0000-0000-000000000000";
-  const probeRespPath = `/tmp/mineru-token-verify-${Date.now()}.json`;
-  const probeResult = runShellResult(`/usr/bin/curl -sS --connect-timeout 10 --max-time 20 ${shellQuote(apiBase + "/extract/task/" + probeTaskId)} ` +
-                                     `-H ${shellQuote("Authorization: Bearer " + apiToken)} ` +
-                                     `-w '%{http_code}' -o ${shellQuote(probeRespPath)}`);
-  const http = String(probeResult.stdout || "").trim();
-  const body = readTextFile(probeRespPath);
+  const apiBase = sanitizeConfigValue(config.MINERU_API_BASE) || 'https://mineru.net/api/v4';
+  const probeTaskId = '00000000-0000-0000-0000-000000000000';
+  const probeRespPath = path.join(getTmpDir(), 'mineru-token-verify-' + Date.now() + '.json');
 
-  if (probeResult.exitCode !== 0) {
-    if (http === "401" || http === "403") {
-      throw new Error(buildExpiredTokenHelp(skillRoot, http));
+  try {
+    const probeResp = await httpRequest(apiBase + '/extract/task/' + probeTaskId, {
+      headers: { 'Authorization': 'Bearer ' + apiToken }
+    });
+
+    if (probeResp.status === 401 || probeResp.status === 403) {
+      throw new Error(buildExpiredTokenHelp(skillRoot, probeResp.status));
     }
-    if (http === "000" || !http) {
-      return `Token ÒÑ¶ÁÈ¡£¬µ«µ±Ç°ÎŞ·¨Á¬½Óµ½ ${apiBase}¡£Çë¼ì²éÍøÂçÁ¬Í¨ĞÔ¡¢´úÀíÉèÖÃ»ò MINERU_API_BASE ÊÇ·ñ¿É´ï¡£` +
-             (probeResult.stderr ? ` Õï¶ÏĞÅÏ¢£º${probeResult.stderr}` : "");
+    if (probeResp.status !== 200 && probeResp.status !== 404) {
+      return 'Token éªŒè¯å¼‚å¸¸ï¼Œæ¥å£è¿”å› HTTP ' + probeResp.status + 'ï¼Œå°†é™çº§ä¸ºå…è´¹æ¥å£ã€‚';
     }
-    return `Token ÒÑ¶ÁÈ¡£¬µ«×Ô¼ìÇëÇóÎ´³É¹¦Íê³É£¨curl ÍË³öÂë ${probeResult.exitCode}£¬HTTP ${http || "unknown"}£©¡£` +
-           ` Çë¼ì²é API µØÖ·»òÍøÂçÁ¬Í¨ĞÔ¡£` +
-           (probeResult.stderr ? ` Õï¶ÏĞÅÏ¢£º${probeResult.stderr}` : "");
+    return 'Token éªŒè¯é€šè¿‡ï¼Œå·²æˆåŠŸè¿æ¥ ' + apiBase + 'ï¼Œå½“å‰ä½¿ç”¨æ ‡å‡† Token APIã€‚';
+  } catch (e) {
+    if (e.message.includes('401') || e.message.includes('403')) {
+      throw e;
+    }
+    return 'Token å·²é…ç½®ä½†æ— æ³•è¿æ¥åˆ° ' + apiBase + 'ï¼Œå°†é™çº§ä¸ºå…è´¹æ¥å£ã€‚ï¼ˆé”™è¯¯: ' + e.message + 'ï¼‰';
   }
-
-  if (http === "401" || http === "403") {
-    throw new Error(buildExpiredTokenHelp(skillRoot, http));
-  }
-  if (http !== "200" && http !== "404") {
-    return `Token ÒÑ¶ÁÈ¡£¬µ«×Ô¼ì½Ó¿Ú·µ»Ø HTTP ${http}¡£Çë¼ì²é API µØÖ·»òÍøÂçÁ¬Í¨ĞÔ¡£ÏìÓ¦£º${body}`;
-  }
-  return `Token ×Ô¼ìÍ¨¹ı£ºÒÑ³É¹¦Ğ¯´ø Authorization ·ÃÎÊ ${apiBase}¡£µ±Ç°½Å±¾»áÓÅÏÈÊ¹ÓÃ±ê×¼ Token API¡£`;
 }
 
-function convert(source) {
-  const sh = runShell;
-
-  const skillRoot = getSkillRoot(sh);
+// ============ Main convert ============
+async function convert(source) {
+  const skillRoot = resolveSkillRoot();
   const config = loadConfig(skillRoot);
-  const apiToken = resolveApiToken(sh, config);
-  const mode = apiToken ? "token" : "light";
-  const info = buildSourceInfo(sh, source, mode, skillRoot);
+  const apiToken = resolveApiToken(config);
+  const mode = apiToken ? 'token' : 'light';
+  const info = buildSourceInfo(source, mode, skillRoot);
 
   const options = {
-    apiBase: config.MINERU_API_BASE || "https://mineru.net/api/v4",
-    apiToken: apiToken,
+    apiBase: config.MINERU_API_BASE || 'https://mineru.net/api/v4',
+    apiToken,
     enableOcr: parseBoolean(config.MINERU_ENABLE_OCR, true),
     enableTable: parseBoolean(config.MINERU_ENABLE_TABLE, true),
     enableFormula: parseBoolean(config.MINERU_ENABLE_FORMULA, false),
-    languageCode: config.MINERU_LANGUAGE_CODE || "ch",
+    languageCode: config.MINERU_LANGUAGE_CODE || 'ch',
     modelVersion: resolveTokenModelVersion(config.MINERU_MODEL_VERSION, info.sourceType),
     pageRanges: normalizePageRanges(config.MINERU_PAGE_RANGES),
     pollMax: parseInteger(config.MINERU_POLL_MAX, 20),
     pollSleep: parseInteger(config.MINERU_POLL_SLEEP, 10),
-    logLevel: config.MINERU_LOG_LEVEL || "medium"
+    logLevel: config.MINERU_LOG_LEVEL || 'medium'
   };
 
   const levelMap = { low: 1, medium: 2, high: 3 };
@@ -1047,42 +1108,61 @@ function convert(source) {
     }
   };
 
-  log(`¿ªÊ¼×ª»»: ${info.fileName}`, 2);
-  log(`×ª»»Ä£Ê½: ${mode === "token" ? "±ê×¼ Token API" : "ÃâµÇÂ¼ÇáÁ¿½Ó¿Ú"}`, 2);
-  log(`ÊäÈëÀàĞÍ: ${info.sourceType}`, 2);
+  log('å¼€å§‹è½¬æ¢: ' + info.fileName, 2);
+  log('è½¬æ¢æ¨¡å¼: ' + (mode === 'token' ? 'æ ‡å‡† Token API' : 'å…è´¹æ¥å£'), 2);
+  log('æ¥æºç±»å‹: ' + info.sourceType, 2);
 
-  if (mode === "token") {
-    if (info.sourceType === "local_file") {
-      return convertLocalFileWithTokenApi(sh, skillRoot, source, info, options, log);
+  if (mode === 'token') {
+    if (info.sourceType === 'local_file') {
+      return await convertLocalFileWithTokenApi(source, info, options, log);
     }
-    return convertRemoteUrlWithTokenApi(sh, skillRoot, source, info, options, log);
+    return await convertRemoteUrlWithTokenApi(source, info, options, log);
   }
-  if (info.sourceType === "local_file") {
-    return convertLocalFileWithLightApi(sh, skillRoot, source, info, options, log);
+  if (info.sourceType === 'local_file') {
+    return await convertLocalFileWithLightApi(source, info, options, log);
   }
-  return convertRemoteUrlWithLightApi(sh, skillRoot, source, info, options, log);
+  return await convertRemoteUrlWithLightApi(source, info, options, log);
 }
 
-// ===== CLI Èë¿Ú =====
+// ============ CLI entry ============
 function run(argv) {
   try {
     if (!argv || argv.length === 0) {
-      return "ÓÃ·¨: osascript -l JavaScript convert.js <ÎÄ¼şÂ·¾¶»òURL>\n      osascript -l JavaScript convert.js checktoken\nÈ±ÉÙÎÄ¼şÂ·¾¶»ò URL ²ÎÊı";
+      return 'ç”¨æ³•: node convert.js <æ–‡ä»¶è·¯å¾„æˆ–URL>\n      node convert.js --verify-token\nç¼ºå°‘æ–‡ä»¶è·¯å¾„æˆ– URL å‚æ•°';
     }
 
     const command = argv[0];
-    if (command === "--verify-token" || command === "verify-token" || command === "checktoken") {
-      const sh = runShell;
-      const skillRoot = getSkillRoot(sh);
+    if (command === '--verify-token' || command === 'verify-token' || command === 'checktoken') {
+      const skillRoot = resolveSkillRoot();
       const config = loadConfig(skillRoot);
-      return verifyToken(sh, skillRoot, config);
+      return verifyToken(null, skillRoot, config).then(r => r).catch(e => e.message);
     }
 
     const result = convert(command);
+    if (result && typeof result.then === 'function') {
+      return result.then(r => r.message).catch(e => 'è½¬æ¢å¤±è´¥: ' + e.message);
+    }
     return result.message;
-
   } catch (error) {
-    return `×ª»»Ê§°Ü: ${error.message}`;
+    return 'è½¬æ¢å¤±è´¥: ' + error.message;
   }
 }
 
+// Make module importable
+if (require.main === module) {
+  const result = run(process.argv.slice(2));
+  if (result && typeof result.then === 'function') {
+    result.then(msg => {
+      console.log(msg);
+      process.exit(0);
+    }).catch(err => {
+      console.error('é”™è¯¯:', err.message);
+      process.exit(1);
+    });
+  } else {
+    console.log(result);
+    process.exit(0);
+  }
+}
+
+module.exports = { convert, verifyToken };
