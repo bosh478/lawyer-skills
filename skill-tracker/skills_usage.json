@@ -1,0 +1,352 @@
+{
+  "skills": {
+    "mama": {
+      "installed_at": "2026-03-31",
+      "last_invoked": null,
+      "invoke_count": 0,
+      "first_invoked": null
+    },
+    "p10": {
+      "installed_at": "2026-03-31",
+      "last_invoked": null,
+      "invoke_count": 0,
+      "first_invoked": null
+    },
+    "p7": {
+      "installed_at": "2026-03-31",
+      "last_invoked": null,
+      "invoke_count": 0,
+      "first_invoked": null
+    },
+    "p9": {
+      "installed_at": "2026-03-31",
+      "last_invoked": null,
+      "invoke_count": 0,
+      "first_invoked": null
+    },
+    "pro": {
+      "installed_at": "2026-03-31",
+      "last_invoked": null,
+      "invoke_count": 0,
+      "first_invoked": null
+    },
+    "pua": {
+      "installed_at": "2026-03-31",
+      "last_invoked": null,
+      "invoke_count": 0,
+      "first_invoked": null
+    },
+    "pua-en": {
+      "installed_at": "2026-03-31",
+      "last_invoked": null,
+      "invoke_count": 0,
+      "first_invoked": null
+    },
+    "pua-ja": {
+      "installed_at": "2026-03-31",
+      "last_invoked": null,
+      "invoke_count": 0,
+      "first_invoked": null
+    },
+    "pua-loop": {
+      "installed_at": "2026-03-31",
+      "last_invoked": null,
+      "invoke_count": 0,
+      "first_invoked": null
+    },
+    "shot": {
+      "installed_at": "2026-03-31",
+      "last_invoked": null,
+      "invoke_count": 0,
+      "first_invoked": null
+    },
+    "yes": {
+      "installed_at": "2026-03-31",
+      "last_invoked": null,
+      "invoke_count": 0,
+      "first_invoked": null
+    },
+    "pua-main": {
+      "installed_at": "2026-03-31",
+      "last_invoked": null,
+      "invoke_count": 0,
+      "first_invoked": null
+    },
+    "ljg-paper": {
+      "installed_at": "2026-04-15",
+      "last_invoked": null,
+      "invoke_count": 0,
+      "first_invoked": null
+    },
+    "minimax-docx": {
+      "installed_at": "2026-04-15",
+      "last_invoked": null,
+      "invoke_count": 0,
+      "first_invoked": null
+    },
+    "skill-vetter": {
+      "installed_at": "2026-04-15",
+      "last_invoked": null,
+      "invoke_count": 0,
+      "first_invoked": null
+    },
+    "pptx-generator": {
+      "installed_at": "2026-04-15",
+      "last_invoked": null,
+      "invoke_count": 0,
+      "first_invoked": null
+    },
+    "skill-creator": {
+      "installed_at": "2026-04-15",
+      "last_invoked": null,
+      "invoke_count": 0,
+      "first_invoked": null
+    },
+    "minimax-pdf": {
+      "installed_at": "2026-04-15",
+      "last_invoked": null,
+      "invoke_count": 0,
+      "first_invoked": null
+    },
+    "minimax-xlsx": {
+      "installed_at": "2026-04-15",
+      "last_invoked": null,
+      "invoke_count": 0,
+      "first_invoked": null
+    },
+    "darwin": {
+      "installed_at": "2026-04-22",
+      "last_invoked": "2026-04-22T00:00:00Z",
+      "invoke_count": 1,
+      "first_invoked": "2026-04-22T00:00:00Z"
+    },
+    "tkk-legal-article-pipeline": {
+      "installed_at": "2026-04-22",
+      "last_invoked": null,
+      "invoke_count": 0,
+      "first_invoked": null
+    },
+    "claude-mem": {
+      "installed_at": "2026-04-09",
+      "last_invoked": null,
+      "invoke_count": 0,
+      "first_invoked": null
+    },
+    "legal-writing-style": {
+      "installed_at": "2026-04-17",
+      "last_invoked": null,
+      "invoke_count": 0,
+      "first_invoked": null
+    },
+    "web-access": {
+      "installed_at": "2026-04-10",
+      "last_invoked": null,
+      "invoke_count": 0,
+      "first_invoked": null
+    },
+    "img-assist": {
+      "installed_at": "2026-04-26",
+      "last_invoked": null,
+      "invoke_count": 0,
+      "first_invoked": null
+    },
+    "mineru-ocr": {
+      "installed_at": "2026-04-16",
+      "last_invoked": null,
+      "invoke_count": 0,
+      "first_invoked": null
+    },
+    "tkk-article-polish": {
+      "installed_at": "2026-04-17",
+      "last_invoked": null,
+      "invoke_count": 0,
+      "first_invoked": null
+    },
+    "tkk-legal-ingest": {
+      "installed_at": "2026-04-16",
+      "last_invoked": "2026-04-26T12:27:15.089368Z",
+      "invoke_count": 23,
+      "first_invoked": "2026-04-16T10:00:00Z"
+    },
+    "law-to-markdown": {
+      "installed_at": "2026-04-17",
+      "last_invoked": null,
+      "invoke_count": 0,
+      "first_invoked": null
+    },
+    "baoyu-article-illustrator": {
+      "installed_at": "2026-04-26",
+      "last_invoked": null,
+      "invoke_count": 0,
+      "first_invoked": null
+    },
+    "baoyu-comic": {
+      "installed_at": "2026-04-26",
+      "last_invoked": null,
+      "invoke_count": 0,
+      "first_invoked": null
+    },
+    "baoyu-compress-image": {
+      "installed_at": "2026-04-26",
+      "last_invoked": null,
+      "invoke_count": 0,
+      "first_invoked": null
+    },
+    "baoyu-cover-image": {
+      "installed_at": "2026-04-26",
+      "last_invoked": null,
+      "invoke_count": 0,
+      "first_invoked": null
+    },
+    "baoyu-danger-gemini-web": {
+      "installed_at": "2026-04-26",
+      "last_invoked": null,
+      "invoke_count": 0,
+      "first_invoked": null
+    },
+    "baoyu-danger-x-to-markdown": {
+      "installed_at": "2026-04-26",
+      "last_invoked": null,
+      "invoke_count": 0,
+      "first_invoked": null
+    },
+    "baoyu-diagram": {
+      "installed_at": "2026-04-26",
+      "last_invoked": null,
+      "invoke_count": 0,
+      "first_invoked": null
+    },
+    "baoyu-format-markdown": {
+      "installed_at": "2026-04-26",
+      "last_invoked": null,
+      "invoke_count": 0,
+      "first_invoked": null
+    },
+    "baoyu-image-cards": {
+      "installed_at": "2026-04-26",
+      "last_invoked": null,
+      "invoke_count": 0,
+      "first_invoked": null
+    },
+    "baoyu-imagine": {
+      "installed_at": "2026-04-26",
+      "last_invoked": null,
+      "invoke_count": 0,
+      "first_invoked": null
+    },
+    "baoyu-infographic": {
+      "installed_at": "2026-04-26",
+      "last_invoked": null,
+      "invoke_count": 0,
+      "first_invoked": null
+    },
+    "baoyu-markdown-to-html": {
+      "installed_at": "2026-04-26",
+      "last_invoked": null,
+      "invoke_count": 0,
+      "first_invoked": null
+    },
+    "baoyu-post-to-wechat": {
+      "installed_at": "2026-04-26",
+      "last_invoked": null,
+      "invoke_count": 0,
+      "first_invoked": null
+    },
+    "baoyu-post-to-weibo": {
+      "installed_at": "2026-04-26",
+      "last_invoked": null,
+      "invoke_count": 0,
+      "first_invoked": null
+    },
+    "baoyu-post-to-x": {
+      "installed_at": "2026-04-26",
+      "last_invoked": null,
+      "invoke_count": 0,
+      "first_invoked": null
+    },
+    "baoyu-slide-deck": {
+      "installed_at": "2026-04-26",
+      "last_invoked": null,
+      "invoke_count": 0,
+      "first_invoked": null
+    },
+    "baoyu-translate": {
+      "installed_at": "2026-04-26",
+      "last_invoked": null,
+      "invoke_count": 0,
+      "first_invoked": null
+    },
+    "baoyu-url-to-markdown": {
+      "installed_at": "2026-04-26",
+      "last_invoked": null,
+      "invoke_count": 0,
+      "first_invoked": null
+    },
+    "baoyu-youtube-transcript": {
+      "installed_at": "2026-04-26",
+      "last_invoked": null,
+      "invoke_count": 0,
+      "first_invoked": null
+    },
+    "lark-approval": {
+      "installed_at": "2026-04-20",
+      "last_invoked": null,
+      "invoke_count": 0,
+      "first_invoked": null
+    },
+    "lark-calendar": {
+      "installed_at": "2026-04-20",
+      "last_invoked": null,
+      "invoke_count": 0,
+      "first_invoked": null
+    },
+    "lark-contact": {
+      "installed_at": "2026-04-20",
+      "last_invoked": null,
+      "invoke_count": 0,
+      "first_invoked": null
+    },
+    "lark-doc": {
+      "installed_at": "2026-04-20",
+      "last_invoked": null,
+      "invoke_count": 0,
+      "first_invoked": null
+    },
+    "lark-im": {
+      "installed_at": "2026-04-20",
+      "last_invoked": null,
+      "invoke_count": 0,
+      "first_invoked": null
+    },
+    "lark-okr": {
+      "installed_at": "2026-04-20",
+      "last_invoked": null,
+      "invoke_count": 0,
+      "first_invoked": null
+    },
+    "lark-sheets": {
+      "installed_at": "2026-04-20",
+      "last_invoked": null,
+      "invoke_count": 0,
+      "first_invoked": null
+    },
+    "lark-task": {
+      "installed_at": "2026-04-20",
+      "last_invoked": null,
+      "invoke_count": 0,
+      "first_invoked": null
+    },
+    "lark-wiki": {
+      "installed_at": "2026-04-20",
+      "last_invoked": null,
+      "invoke_count": 0,
+      "first_invoked": null
+    },
+    "karpathy-guidelines": {
+      "installed_at": "2026-04-22",
+      "last_invoked": null,
+      "invoke_count": 0,
+      "first_invoked": null
+    }
+  }
+}
