@@ -657,7 +657,6 @@ async function convertLocalFileWithTokenApi(filePath, info, options, log) {
     };
 
     const rawBody = JSON.stringify(req1);
-    const rawBody = JSON.stringify(req1);
 
     const resp1 = await httpRequest(API_BASE + '/file-urls/batch', {
       method: 'POST',

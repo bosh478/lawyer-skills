@@ -1,0 +1,20 @@
+[
+  {
+    "id": 1,
+    "prompt": "C:\\Users\\汤康康\\Desktop\\合同.pdf",
+    "expected": "输出Markdown文件到桌面，包含转换成功提示和归档路径",
+    "category": "happy_path_local_pdf"
+  },
+  {
+    "id": 2,
+    "prompt": "checktoken",
+    "expected": "显示Token验证结果（有效/无效/未配置）",
+    "category": "token_check"
+  },
+  {
+    "id": 3,
+    "prompt": "C:\\Users\\汤康康\\Desktop\\大文件.pdf（超过20页且无Token）",
+    "expected": "提示超限并建议配置Token或有合理降级处理",
+    "category": "edge_case"
+  }
+]
