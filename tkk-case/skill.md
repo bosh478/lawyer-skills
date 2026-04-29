@@ -3,7 +3,7 @@ name: tkk-case
 description: 法律案件全流程处理技能。支持任意方式启动（口述/粘贴/文件）→ 与用户沟通厘清案件 → 调用 tkk-legal-ingest 分析问题（如无答案则用 web-access 检索）→ 生成结构化法律分析文章 → **配图生成前询问用户** → 存入vault。触发场景：用户说"分析这个案子"、"生成法律文章"、"整理案例分析"、"我想咨询一个案件"。
 ---
 
-# tkk-case (v13)
+# tkk-case (v14)
 
 > 全流程法律案件分析技能：沟通启动 → 厘清案件 → 分析 → 文章 → 配图 → vault入库
 
@@ -335,6 +335,60 @@ ELSE 请求权不成立或行使受阻
 2. 独立性原则：民事法律关系独立评价
 3. 一致性原则：刑民结论不得矛盾
 ```
+
+---
+
+## 文章类型与语言风格体系
+
+### 四类文章类型
+
+| 文章类型 | 适用场景 | 语言风格 | 示例 |
+|---------|---------|---------|------|
+| **学术分析类** | 严谨的法律论证、研究报告 | 法言法语为主，严谨规范 | 论文、学术分析 |
+| **案例分享类** | 法律讲座、专业研讨会分享 | 专业但不死板，有温度有节奏感 | 案例分析文章 |
+| **普法宣传类** | 面向公众的法律知识普及 | 通俗易懂，生动有趣 | 普法文章 |
+| **工作文书类** | 律师日常工作文书 | 简洁明了，格式规范 | 法律意见书、案例摘要 |
+
+### 语言风格详解：案例分享类
+
+**定位**：介于学术论文和普法文章之间
+
+**核心特征**：像资深律师在法律讲座或专业研讨会上分享案例时的风格
+
+**风格要素**：
+
+| 要素 | 要求 | 示例 |
+|-----|------|------|
+| 专业深度 | 有法律分析的专业性 | 运用两阶层四步法等专业框架 |
+| 讲述自然 | 不刻板，像说话一样自然 | 避免机械的法言法语堆砌 |
+| 有温度 | 有情感有态度 | "这事儿挺让人唏嘘的" |
+| 节奏感 | 段落长短交替，有起伏 | 短句制造停顿，长句展开论述 |
+| 流畅易懂 | 专业读者能跟上，非专业也能理解 | 复杂法律概念用比喻解释 |
+
+**语言禁忌**：
+- 避免过度学术化：不说"犯罪嫌疑人供述上述犯罪事实"
+- 避免过度口语化：不说"我觉得吧""这个案子吧"
+- 避免生硬法言法语堆砌：不说"依据《刑法》第X条之规定"
+
+**表达技巧**：
+- 用"我们"代替"笔者"
+- 用问句引导思考："问题出在哪儿？"
+- 用短句制造节奏："说起来，李志萍的行为并不复杂。"
+- 用具体细节代替抽象概括："三十七万元"代替"涉案金额"
+- 用自然过渡代替机械连接："接下来""可结果呢""还有一个细节"
+
+### 文章类型选择
+
+在 Step 1.5 案件类型确认时，同步确认文章类型：
+
+| 用户场景 | 推荐类型 |
+|---------|---------|
+| 学术研究、论文发表 | 学术分析类 |
+| 法律讲座案例分享、专业研讨会 | 案例分享类 |
+| 面向公众普法 | 普法宣传类 |
+| 内部工作存档 | 工作文书类 |
+
+**默认类型**：案例分享类
 
 ---
 
@@ -1163,6 +1217,24 @@ Step 5: 用户确认
 Step 6: 插入 Markdown 引用
 ```
 
+#### 配图数量规范
+
+| 文章类型 | 建议数量 | 构成 |
+|---------|---------|------|
+| 单一案件 | 3-4张 | 封面1 + 章节图2-3 |
+| 刑民交叉 | 4-5张 | 封面1 + 双轨图2 + 协调图2 |
+| 复杂案件 | 不超过6张 | 封面1 + 核心分析4-5 |
+
+#### 配图与文章结构对应
+
+| 配图类型 | 对应章节 | 放置位置 | 示例 |
+|---------|---------|---------|------|
+| cover | 引言 | 引言之后，第一章之前 | "一念之差，从护法者到违法者" |
+| timeline | 第二/三章 | 事实分析开头 | "行为链条" |
+| framework | 分析框架章 | 框架章节开头 | "两阶层四步法" |
+| warning | 风险防范章 | 防范建议开头 | "律师执业高压线" |
+| infographic | 结论/附录 | 结论前或附录 | 金额对比、量刑档次 |
+
 #### 配图优先级
 
 | 优先级 | 内容类型 | 配图 Type |
@@ -1177,11 +1249,13 @@ Step 6: 插入 Markdown 引用
 
 | Type | 中文名 | 适用场景 |
 |------|--------|---------|
+| `cover` | 封面图 | 文章开头，传达核心观点/警示主题 |
 | `flowchart` | 流程图 | 分析框架步骤、程序流程、两阶层四步 |
 | `comparison` | 对比图 | 刑民对比、要件对照、类案对比 |
 | `framework` | 框架图 | 构成要件、请求权体系、犯罪论体系 |
 | `timeline` | 时间线 | 案件时间节点、行为发展过程、资金流向 |
 | `infographic` | 信息图 | 金额数据、涉案比例、量刑档次 |
+| `warning` | 警示图 | 结语、风险提示部分 |
 
 #### 统一配色方案（极简风格）
 
@@ -1200,16 +1274,35 @@ Step 6: 插入 Markdown 引用
 
 #### prompt 生成模板
 
+**基本结构**：
 ```
-prompt 结构：
-"Minimalist legal infographic, white background, Chinese text '[核心论点一句话]', [视觉元素], clean and professional style"
+Minimalist legal infographic, [background], Chinese text '[核心论点]', [visual elements], clean and professional style
+```
 
-示例：
-"Minimalist legal infographic, white background, Chinese text '两阶层犯罪论体系：客观违法→主观有责', key visual elements, clean professional style"
+**各 Type 模板**：
 
-"Minimalist legal infographic, light gray background, Chinese text '请求权检索顺序：契约→物权→侵权→不当得利', key visual elements, clean professional style"
+| Type | 模板 | 示例 |
+|------|------|------|
+| cover | `Minimalist legal infographic, white background, Chinese text '[核心警示观点]', dramatic visual contrast, clean professional style` | "一念之差：从护法者到违法者" |
+| timeline | `Minimalist timeline infographic, white background, Chinese text '[主题]', show [N] steps with arrow connections, clean professional style` | "行为链条：5步骤" |
+| framework | `Minimalist framework diagram, white background, Chinese text '[框架名称]', show [N] steps with downward arrows, clean professional style` | "两阶层四步法" |
+| warning | `Minimalist warning infographic, white background, Chinese text '[警示内容]', show [N] items with warning icons, clean professional style` | "律师执业高压线清单" |
+| infographic | `Minimalist infographic, white background, Chinese text '[数据主题]', [chart type], clean professional style` | "量刑对比" |
+| flowchart | `Minimalist flowchart diagram, white background, Chinese text '[流程名称]', show [N] steps with arrows, clean professional style` | "执行程序流程" |
+| comparison | `Minimalist comparison chart, white background, Chinese text '[对比主题]', compare [A] vs [B], clean professional style` | "刑民交叉对比" |
 
-"Minimalist legal infographic, white background, Chinese text '行政行为合法性三步审查：结果→依据→证据', key visual elements, clean professional style"
+**负面 prompt（避免元素）**：
+```
+避免：realistic photo, photography, 3D render, cartoon, colorful, busy background
+```
+
+**配色固定**：
+```
+配色方案（极简风格）：
+- 背景：白色 #FFFFFF 或浅灰 #F5F5F5
+- 主色：深灰 #333333
+- 辅助：#666666
+- 强调：#2196F3
 ```
 
 #### 调用 baoyu-imagine
@@ -1231,6 +1324,37 @@ prompt 结构：
 - **格式**：默认 `.jpg`（可用户指定 `.png`）
 - **尺寸**：默认 16:9，可指定
 - **质量**：默认 2k
+
+#### 配图生成前检查清单
+
+**环境检查**：
+- [ ] `~/.baoyu-skills/.env` 存在
+- [ ] `.env` 包含 `MINIMAX_API_KEY`
+- [ ] `.env` 包含 `MINIMAX_BASE_URL`
+- [ ] `~/.baoyu-skills/baoyu-imagine/EXTEND.md` 存在
+
+**输出路径检查**：
+- [ ] 图片目录存在：`8输出/tkk-case/images/`
+- [ ] 路径使用正斜杠 `/`（非反斜杠 `\`）
+
+**图片命名规范**：
+```
+{案件关键词}-{配图类型}.jpg
+示例：
+- 李志萍案-封面.jpg
+- 李志萍案-行为链条.jpg
+- 李志萍案-两阶层四步法.jpg
+- 李志萍案-高压线.jpg
+```
+
+#### 常见错误处理
+
+| 错误 | 处理方式 |
+|------|---------|
+| "invalid api key" | 检查 `.env` 中 `MINIMAX_API_KEY` 是否正确 |
+| "rate limit" | 等待 30 秒后重试，最多 3 次 |
+| 图片生成失败 | 检查 prompt 是否包含中文字符，确认编码正确 |
+| 输出路径错误 | 确认使用 `D:/path/to/images/` 而非 `D:\path\to\images\` |
 
 ---
 
@@ -1344,6 +1468,7 @@ prompt 结构：
 
 | 版本 | 日期 | 变化 |
 |------|------|------|
+| v14 | 2026-04-29 | **完善配图环节**：新增cover/warning类型；配图数量规范；配图与文章结构对应；prompt模板扩展；检查清单和常见错误处理；**新增文章类型体系**：案例分享类语言风格定义 |
 | v13 | 2026-04-27 | **强化vault知识库引用**：引用位置规范化；wikilink格式标准化；引用校验机制；参考文献分类清单 |
 | v12 | 2026-04-27 | **优化配图生成流程**：prompt生成标准化模板；配色方案（案件类型）；配图Type选择标准；动态对应文章核心论点 |
 | v11 | 2026-04-27 | **优化文章生成模板**：框架输出→章节映射；四类案件标准化模板（刑事/民商/行政/刑民交叉）；各章节内容标准规范化 |
